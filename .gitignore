@@ -1,0 +1,60 @@
+# compiled output
+/dist
+/node_modules
+/tmp
+/out-tsc
+
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS
+.DS_Store
+
+# Tests
+/coverage
+/.nyc_output
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Docker volumes
+/docker/mosquitto/data/*
+/docker/mosquitto/log/*
+!docker/mosquitto/data/.gitkeep
+!docker/mosquitto/log/.gitkeep
+
+# misc
+/.sass-cache
+/connect.lock
+/libpeerconnection.log
+testem.log
+/typings
+
+# System Files
+Thumbs.db
+
+# Dependencies
+/.pnp
+.pnp.js
