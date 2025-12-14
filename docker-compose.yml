@@ -28,6 +28,7 @@ services:
     environment:
       EMQX_NAME: smokeguard
       EMQX_HOST: 127.0.0.1
+      EMQX_NODE__COOKIE: ${EMQX_NODE__COOKIE:-smokeguard-secret-cookie}
       EMQX_DASHBOARD__DEFAULT_USERNAME: ${MQTT_DASHBOARD_USER:-admin}
       EMQX_DASHBOARD__DEFAULT_PASSWORD: ${MQTT_DASHBOARD_PASSWORD:-public}
     ports:
@@ -37,6 +38,7 @@ services:
     volumes:
       - emqx_data:/opt/emqx/data
       - emqx_log:/opt/emqx/log
+      - ./emqx-config/cluster.hocon:/opt/emqx/data/configs/cluster.hocon
     networks:
       - smokeguard-network
     healthcheck:
@@ -44,6 +46,25 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # EMQX Initialization
+  emqx-init:
+    image: alpine:latest
+    container_name: smokeguard-emqx-init
+    volumes:
+      - ./emqx-config/init-emqx.sh:/init-emqx.sh
+    environment:
+      MQTT_DASHBOARD_USER: ${MQTT_DASHBOARD_USER:-admin}
+      MQTT_DASHBOARD_PASSWORD: ${MQTT_DASHBOARD_PASSWORD:-public}
+      MQTT_USERNAME: ${MQTT_USERNAME:-backend-smokeguard}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-backend-secret-change-in-production}
+    networks:
+      - smokeguard-network
+    depends_on:
+      mqtt:
+        condition: service_healthy
+    command: sh -c "chmod +x /init-emqx.sh && /init-emqx.sh"
+    restart: "no"
 
   # Backend API
   backend:
@@ -63,8 +84,8 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       MQTT_HOST: mqtt
       MQTT_PORT: 1883
-      MQTT_USERNAME: ${MQTT_USERNAME:-}
-      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MQTT_USERNAME: ${MQTT_USERNAME:-backend-smokeguard}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-backend-secret-change-in-production}
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
@@ -77,7 +98,7 @@ services:
       postgres:
         condition: service_healthy
       mqtt:
-        condition: service_started
+        condition: service_healthy
     networks:
       - smokeguard-network
     command: npm run start:dev

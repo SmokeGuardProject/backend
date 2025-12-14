@@ -1,0 +1,47 @@
+authentication = [
+  {
+    mechanism = password_based
+    backend = http
+    enable = true
+
+    method = post
+    url = "http://backend:3000/api/mqtt/auth"
+    headers {
+      "content-type" = "application/json"
+    }
+    body {
+      username = "${username}"
+      password = "${password}"
+      clientid = "${clientid}"
+    }
+
+    request_timeout = 5s
+    enable_pipelining = 100
+  }
+]
+
+authorization {
+  no_match = deny
+  deny_action = disconnect
+
+  sources = [
+    {
+      type = http
+      enable = true
+
+      method = post
+      url = "http://backend:3000/api/mqtt/acl"
+      headers {
+        "content-type" = "application/json"
+      }
+      body {
+        username = "${username}"
+        clientid = "${clientid}"
+        topic = "${topic}"
+        action = "${action}"
+      }
+
+      request_timeout = 5s
+    }
+  ]
+}

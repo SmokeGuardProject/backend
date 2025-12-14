@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { Event } from './event.entity';
 import { Notification } from './notification.entity';
+import { Sensor } from './sensor.entity';
 
 @Entity('users')
 export class User {
@@ -34,4 +35,7 @@ export class User {
 
   @OneToMany(() => Notification, (notification) => notification.user)
   notifications: Notification[];
+
+  @OneToMany(() => Sensor, (sensor) => sensor.user)
+  sensors: Sensor[];
 }

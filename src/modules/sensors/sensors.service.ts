@@ -1,4 +1,4 @@
-import {ConflictException, Injectable, NotFoundException,} from '@nestjs/common';
+import {ConflictException, Injectable, NotFoundException} from '@nestjs/common';
 import {InjectRepository} from '@nestjs/typeorm';
 import {Repository} from 'typeorm';
 import {Sensor, SensorStatus} from '../../database/entities/sensor.entity';
@@ -21,12 +21,13 @@ export class SensorsService {
     private readonly sensorReadingRepository: Repository<SensorReading>,
   ) {}
 
-  async create(createSensorDto: CreateSensorDto): Promise<CreateSensorResponseDto> {
+  async create(userId: number, createSensorDto: CreateSensorDto): Promise<CreateSensorResponseDto> {
     const sensorCode = this.generateSensorCode();
     const sensorCodeHash = await this.hashSensorCode(sensorCode);
 
     const sensor = this.sensorRepository.create({
       ...createSensorDto,
+      userId,
       sensorCodeHash,
       status: SensorStatus.INACTIVE,
     });
@@ -45,12 +46,14 @@ export class SensorsService {
     }
   }
 
-  async findAll(filters?: {
+  async findAll(userId: number, filters?: {
     status?: SensorStatus;
     floor?: number;
     building?: string;
   }): Promise<SensorResponseDto[]> {
     const queryBuilder = this.sensorRepository.createQueryBuilder('sensor');
+
+    queryBuilder.where('sensor.user_id = :userId', { userId });
 
     if (filters?.status) {
       queryBuilder.andWhere('sensor.status = :status', { status: filters.status });
@@ -70,8 +73,8 @@ export class SensorsService {
     return sensors.map((sensor) => this.sanitizeSensor(sensor));
   }
 
-  async findOne(id: number): Promise<SensorResponseDto> {
-    const sensor = await this.sensorRepository.findOne({ where: { id } });
+  async findOne(userId: number, id: number): Promise<SensorResponseDto> {
+    const sensor = await this.sensorRepository.findOne({ where: { id, userId } });
 
     if (!sensor) {
       throw new NotFoundException('Датчик не знайдено');
@@ -80,8 +83,8 @@ export class SensorsService {
     return this.sanitizeSensor(sensor);
   }
 
-  async update(id: number, updateSensorDto: UpdateSensorDto): Promise<SensorResponseDto> {
-    const sensor = await this.sensorRepository.findOne({ where: { id } });
+  async update(userId: number, id: number, updateSensorDto: UpdateSensorDto): Promise<SensorResponseDto> {
+    const sensor = await this.sensorRepository.findOne({ where: { id, userId } });
 
     if (!sensor) {
       throw new NotFoundException('Датчик не знайдено');
@@ -93,8 +96,8 @@ export class SensorsService {
     return this.sanitizeSensor(updatedSensor);
   }
 
-  async remove(id: number): Promise<void> {
-    const sensor = await this.sensorRepository.findOne({ where: { id } });
+  async remove(userId: number, id: number): Promise<void> {
+    const sensor = await this.sensorRepository.findOne({ where: { id, userId } });
 
     if (!sensor) {
       throw new NotFoundException('Датчик не знайдено');
@@ -103,8 +106,8 @@ export class SensorsService {
     await this.sensorRepository.remove(sensor);
   }
 
-  async regenerateCode(id: number): Promise<RegenerateCodeResponseDto> {
-    const sensor = await this.sensorRepository.findOne({ where: { id } });
+  async regenerateCode(userId: number, id: number): Promise<RegenerateCodeResponseDto> {
+    const sensor = await this.sensorRepository.findOne({ where: { id, userId } });
 
     if (!sensor) {
       throw new NotFoundException('Датчик не знайдено');
@@ -121,6 +124,7 @@ export class SensorsService {
   }
 
   async getSensorReadings(
+    userId: number,
     id: number,
     filters?: {
       startDate?: Date;
@@ -129,7 +133,7 @@ export class SensorsService {
       limit?: number;
     },
   ): Promise<SensorReadingResponseDto[]> {
-    const sensor = await this.sensorRepository.findOne({ where: { id } });
+    const sensor = await this.sensorRepository.findOne({ where: { id, userId } });
 
     if (!sensor) {
       throw new NotFoundException('Датчик не знайдено');
@@ -181,6 +185,46 @@ export class SensorsService {
     }
 
     return bcrypt.compare(plainCode, sensor.sensorCodeHash);
+  }
+
+  async saveSensorReading(
+    sensorId: number,
+    data: {
+      smokeDetected: boolean;
+      smokeLevel: number;
+    },
+  ): Promise<void> {
+    const sensor = await this.sensorRepository.findOne({
+      where: { id: sensorId },
+    });
+
+    if (!sensor) {
+      throw new NotFoundException(`Sensor ${sensorId} not found`);
+    }
+
+    const reading = this.sensorReadingRepository.create({
+      sensor,
+      smokeDetected: data.smokeDetected,
+      smokeLevel: data.smokeLevel,
+      timestamp: new Date(),
+    });
+
+    await this.sensorReadingRepository.save(reading);
+  }
+
+  async updateHeartbeat(sensorId: number): Promise<void> {
+    const sensor = await this.sensorRepository.findOne({
+      where: { id: sensorId },
+    });
+
+    if (!sensor) {
+      throw new NotFoundException(`Sensor ${sensorId} not found`);
+    }
+
+    sensor.lastCheckedAt = new Date();
+    sensor.status = SensorStatus.ACTIVE;
+
+    await this.sensorRepository.save(sensor);
   }
 
   private generateSensorCode(): string {

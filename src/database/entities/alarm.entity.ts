@@ -4,24 +4,32 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
+import { Sensor } from './sensor.entity';
 
 export enum AlarmStatus {
   INACTIVE = 'inactive',
   ACTIVE = 'active',
-  MALFUNCTION = 'malfunction',
 }
 
 @Entity('alarms')
 export class Alarm {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn()
+  id: number;
 
-  @Column({ name: 'alarm_code', unique: true, length: 50 })
-  alarmCode: string;
+  @Column({ name: 'sensor_id', type: 'int' })
+  sensorId: number;
 
   @Column({ length: 255 })
   location: string;
+
+  @Column({ nullable: true, type: 'int' })
+  floor: number;
+
+  @Column({ length: 100, nullable: true })
+  building: string;
 
   @Column({
     type: 'varchar',
@@ -40,4 +48,8 @@ export class Alarm {
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
+
+  @ManyToOne(() => Sensor, (sensor) => sensor.alarms, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'sensor_id' })
+  sensor: Sensor;
 }

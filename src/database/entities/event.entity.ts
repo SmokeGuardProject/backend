@@ -22,17 +22,14 @@ export enum EventType {
 @Index(['createdAt'])
 @Index(['sensorId'])
 export class Event {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn()
+  id: number;
 
-  @Column({ name: 'sensor_id', type: 'uuid', nullable: true })
-  sensorId: string;
+  @Column({ name: 'sensor_id', type: 'int', nullable: true })
+  sensorId: number;
 
   @Column({ name: 'event_type', type: 'varchar', length: 50 })
   eventType: EventType;
-
-  @Column({ type: 'text', nullable: true })
-  message: string;
 
   @Column({ type: 'boolean', default: false })
   resolved: boolean;
@@ -40,8 +37,8 @@ export class Event {
   @Column({ name: 'resolved_at', type: 'timestamp', nullable: true })
   resolvedAt: Date;
 
-  @Column({ name: 'resolved_by', type: 'uuid', nullable: true })
-  resolvedById: string;
+  @Column({ name: 'resolved_by', type: 'int', nullable: true })
+  resolvedById: number;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

@@ -22,6 +22,7 @@ import { SensorReadingResponseDto } from './dto/sensor-reading-response.dto';
 import { GetSensorReadingsQueryDto } from './dto/get-sensor-readings-query.dto';
 import { GetSensorsQueryDto } from './dto/get-sensors-query.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { GetUser } from '../auth/decorators/get-user.decorator';
 
 @ApiTags('sensors')
 @Controller('sensors')
@@ -32,40 +33,54 @@ export class SensorsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async create(@Body() createSensorDto: CreateSensorDto): Promise<CreateSensorResponseDto> {
-    return this.sensorsService.create(createSensorDto);
+  async create(
+    @GetUser('id') userId: number,
+    @Body() createSensorDto: CreateSensorDto,
+  ): Promise<CreateSensorResponseDto> {
+    return this.sensorsService.create(userId, createSensorDto);
   }
 
   @Get()
   @HttpCode(HttpStatus.OK)
-  async findAll(@Query() query: GetSensorsQueryDto): Promise<SensorResponseDto[]> {
-    return this.sensorsService.findAll(query);
+  async findAll(
+    @GetUser('id') userId: number,
+    @Query() query: GetSensorsQueryDto,
+  ): Promise<SensorResponseDto[]> {
+    return this.sensorsService.findAll(userId, query);
   }
 
   @Get(':id')
   @HttpCode(HttpStatus.OK)
-  async findOne(@Param('id', ParseIntPipe) id: number): Promise<SensorResponseDto> {
-    return this.sensorsService.findOne(id);
+  async findOne(
+    @GetUser('id') userId: number,
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<SensorResponseDto> {
+    return this.sensorsService.findOne(userId, id);
   }
 
   @Patch(':id')
   @HttpCode(HttpStatus.OK)
   async update(
+    @GetUser('id') userId: number,
     @Param('id', ParseIntPipe) id: number,
     @Body() updateSensorDto: UpdateSensorDto,
   ): Promise<SensorResponseDto> {
-    return this.sensorsService.update(id, updateSensorDto);
+    return this.sensorsService.update(userId, id, updateSensorDto);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('id', ParseIntPipe) id: number): Promise<void> {
-    return this.sensorsService.remove(id);
+  async remove(
+    @GetUser('id') userId: number,
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<void> {
+    return this.sensorsService.remove(userId, id);
   }
 
   @Get(':id/readings')
   @HttpCode(HttpStatus.OK)
   async getSensorReadings(
+    @GetUser('id') userId: number,
     @Param('id', ParseIntPipe) id: number,
     @Query() query: GetSensorReadingsQueryDto,
   ): Promise<SensorReadingResponseDto[]> {
@@ -82,6 +97,6 @@ export class SensorsController {
       filters.endDate = new Date(query.endDate);
     }
 
-    return this.sensorsService.getSensorReadings(id, filters);
+    return this.sensorsService.getSensorReadings(userId, id, filters);
   }
 }

@@ -12,12 +12,11 @@ export const typeOrmConfig: DataSourceOptions = {
   database: process.env.DB_NAME || 'smokeguard',
   entities: [__dirname + '/../database/entities/*.entity{.ts,.js}'],
   migrations: [__dirname + '/../database/migrations/*{.ts,.js}'],
-  synchronize: false, // Never use true in production
+  synchronize: false,
   logging: process.env.NODE_ENV === 'development',
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 };
 
-// DataSource for TypeORM CLI
 const dataSource = new DataSource(typeOrmConfig);
 
 export default dataSource;
