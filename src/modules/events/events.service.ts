@@ -33,18 +33,11 @@ export class EventsService {
   async findAll(filterDto: FilterEventsDto): Promise<Event[]> {
     const queryBuilder = this.eventRepository
       .createQueryBuilder('event')
-      .leftJoinAndSelect('event.sensor', 'sensor')
-      .leftJoinAndSelect('event.resolvedBy', 'resolvedBy');
+      .leftJoinAndSelect('event.sensor', 'sensor');
 
     if (filterDto.eventType) {
       queryBuilder.andWhere('event.event_type = :eventType', {
         eventType: filterDto.eventType,
-      });
-    }
-
-    if (filterDto.resolved !== undefined) {
-      queryBuilder.andWhere('event.resolved = :resolved', {
-        resolved: filterDto.resolved,
       });
     }
 
@@ -64,7 +57,7 @@ export class EventsService {
   async findOne(id: number): Promise<Event> {
     const event = await this.eventRepository.findOne({
       where: { id },
-      relations: ['sensor', 'resolvedBy'],
+      relations: ['sensor'],
     });
 
     if (!event) {
@@ -74,31 +67,13 @@ export class EventsService {
     return event;
   }
 
-  async resolve(id: number, userId: number): Promise<Event> {
-    const event = await this.findOne(id);
-
-    if (event.resolved) {
-      throw new NotFoundException('Подія вже вирішена');
-    }
-
-    event.resolved = true;
-    event.resolvedAt = new Date();
-    event.resolvedById = userId;
-
-    return this.eventRepository.save(event);
-  }
-
   async getStatistics(): Promise<{
     total: number;
-    resolved: number;
-    unresolved: number;
     byType: Record<EventType, number>;
   }> {
-    const [total, resolved, unresolved, byTypeSmokeDetected, byTypeSmokeCleared, byTypeAlarmActivated, byTypeAlarmDeactivated] =
+    const [total, byTypeSmokeDetected, byTypeSmokeCleared, byTypeAlarmActivated, byTypeAlarmDeactivated] =
       await Promise.all([
         this.eventRepository.count(),
-        this.eventRepository.count({ where: { resolved: true } }),
-        this.eventRepository.count({ where: { resolved: false } }),
         this.eventRepository.count({
           where: { eventType: EventType.SMOKE_DETECTED },
         }),
@@ -115,8 +90,6 @@ export class EventsService {
 
     return {
       total,
-      resolved,
-      unresolved,
       byType: {
         [EventType.SMOKE_DETECTED]: byTypeSmokeDetected,
         [EventType.SMOKE_CLEARED]: byTypeSmokeCleared,

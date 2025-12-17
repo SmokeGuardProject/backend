@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsEnum, IsOptional } from 'class-validator';
-import { Transform, Type } from 'class-transformer';
+import { IsEnum, IsOptional } from 'class-validator';
+import { Type } from 'class-transformer';
 import { EventType } from '../../../database/entities/event.entity';
 
 export class FilterEventsDto {
@@ -12,20 +12,6 @@ export class FilterEventsDto {
   @IsOptional()
   @IsEnum(EventType)
   eventType?: EventType;
-
-  @ApiProperty({
-    description: 'Фільтр по статусу вирішення',
-    example: false,
-    required: false,
-  })
-  @IsOptional()
-  @Transform(({ value }) => {
-    if (value === 'true') return true;
-    if (value === 'false') return false;
-    return value;
-  })
-  @IsBoolean()
-  resolved?: boolean;
 
   @ApiProperty({
     description: 'Кількість записів для пропуску',

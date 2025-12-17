@@ -6,7 +6,6 @@ import {
   UpdateDateColumn,
   OneToMany,
 } from 'typeorm';
-import { Event } from './event.entity';
 import { Notification } from './notification.entity';
 import { Sensor } from './sensor.entity';
 
@@ -29,9 +28,6 @@ export class User {
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
-
-  @OneToMany(() => Event, (event) => event.resolvedBy)
-  resolvedEvents: Event[];
 
   @OneToMany(() => Notification, (notification) => notification.user)
   notifications: Notification[];

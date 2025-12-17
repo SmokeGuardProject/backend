@@ -9,7 +9,6 @@ import {
   Index,
 } from 'typeorm';
 import { Sensor } from './sensor.entity';
-import { User } from './user.entity';
 import { Notification } from './notification.entity';
 
 export enum EventType {
@@ -32,25 +31,12 @@ export class Event {
   @Column({ name: 'event_type', type: 'varchar', length: 50 })
   eventType: EventType;
 
-  @Column({ type: 'boolean', default: false })
-  resolved: boolean;
-
-  @Column({ name: 'resolved_at', type: 'timestamp', nullable: true })
-  resolvedAt: Date;
-
-  @Column({ name: 'resolved_by', type: 'int', nullable: true })
-  resolvedById: number;
-
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
   @ManyToOne(() => Sensor, (sensor) => sensor.events, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'sensor_id' })
   sensor: Sensor;
-
-  @ManyToOne(() => User, (user) => user.resolvedEvents)
-  @JoinColumn({ name: 'resolved_by' })
-  resolvedBy: User;
 
   @OneToMany(() => Notification, (notification) => notification.event)
   notifications: Notification[];

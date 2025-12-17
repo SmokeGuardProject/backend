@@ -13,6 +13,8 @@ import { CreateAlarmDto } from './dto/create-alarm.dto';
 import { UpdateAlarmDto } from './dto/update-alarm.dto';
 import { FilterAlarmsDto } from './dto/filter-alarms.dto';
 import { MqttService } from '../mqtt/mqtt.service';
+import { EventsService } from '../events/events.service';
+import { EventType } from '../../database/entities/event.entity';
 
 @Injectable()
 export class AlarmsService {
@@ -23,6 +25,7 @@ export class AlarmsService {
     private readonly sensorRepository: Repository<Sensor>,
     @Inject(forwardRef(() => MqttService))
     private readonly mqttService: MqttService,
+    private readonly eventsService: EventsService,
   ) {}
 
   async create(createAlarmDto: CreateAlarmDto): Promise<Alarm> {
@@ -119,6 +122,11 @@ export class AlarmsService {
     const savedAlarm = await this.alarmRepository.save(alarm);
 
     await this.mqttService.publishAlarmCommand(id, 'deactivate');
+
+    await this.eventsService.create({
+      sensorId: alarm.sensorId,
+      eventType: EventType.ALARM_DEACTIVATED,
+    });
 
     return savedAlarm;
   }

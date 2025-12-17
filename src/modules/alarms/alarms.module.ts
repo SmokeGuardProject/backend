@@ -5,11 +5,13 @@ import { Sensor } from '../../database/entities/sensor.entity';
 import { AlarmsService } from './alarms.service';
 import { AlarmsController } from './alarms.controller';
 import { MqttModule } from '../mqtt/mqtt.module';
+import { EventsModule } from '../events/events.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Alarm, Sensor]),
     forwardRef(() => MqttModule),
+    EventsModule,
   ],
   controllers: [AlarmsController],
   providers: [AlarmsService],
