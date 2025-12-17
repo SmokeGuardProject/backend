@@ -194,6 +194,9 @@ export class SensorsService {
     data: {
       smokeDetected: boolean;
       smokeLevel: number;
+      temperature: number;
+      humidity: number,
+
     },
   ): Promise<{ smokeStateChanged: boolean; previousState: boolean | null }> {
     const sensor = await this.sensorRepository.findOne({
@@ -214,6 +217,8 @@ export class SensorsService {
       sensor,
       smokeDetected: data.smokeDetected,
       smokeLevel: data.smokeLevel,
+      temperature: data.temperature,
+      humidity: data.humidity,
       timestamp: new Date(),
     });
 

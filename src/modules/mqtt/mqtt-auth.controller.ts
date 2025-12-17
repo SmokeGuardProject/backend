@@ -32,9 +32,6 @@ export class MqttAuthController {
 
     @Post('auth')
     @HttpCode(HttpStatus.OK)
-    @ApiOperation({ summary: 'Authenticate MQTT client (EMQX hook)' })
-    @ApiResponse({ status: 200, description: 'Authentication successful' })
-    @ApiResponse({ status: 401, description: 'Authentication failed' })
     async authenticate(@Body() authDto: MqttAuthDto): Promise<Record<string, any>> {
 
 
@@ -82,9 +79,6 @@ export class MqttAuthController {
 
     @Post('acl')
     @HttpCode(HttpStatus.OK)
-    @ApiOperation({ summary: 'Check MQTT permissions (EMQX hook)' })
-    @ApiResponse({ status: 200, description: 'Action allowed' })
-    @ApiResponse({ status: 403, description: 'Action denied' })
     async checkAcl(@Body() aclDto: MqttAclDto): Promise<Record<string, any>> {
         const { clientid, topic, action } = aclDto;
 

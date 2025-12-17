@@ -7,7 +7,7 @@ class UserResponseDto {
   @ApiProperty({ description: 'Email', example: 'user@smokeguard.com' })
   email: string;
 
-  @ApiProperty({ description: "Повне ім'я", example: 'Іван Петренко' })
+  @ApiProperty({ description: "Повне ім'я", example: 'John Doe' })
   fullName: string;
 
   @ApiProperty({

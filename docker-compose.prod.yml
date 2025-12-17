@@ -1,0 +1,100 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: smokeguard-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - smokeguard-network
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mqtt:
+    image: emqx/emqx:5.4.0
+    container_name: smokeguard-mqtt
+    restart: always
+    environment:
+      EMQX_NAME: smokeguard
+      EMQX_HOST: 127.0.0.1
+      EMQX_NODE__COOKIE: ${EMQX_NODE__COOKIE}
+      EMQX_DASHBOARD__DEFAULT_USERNAME: ${MQTT_DASHBOARD_USER}
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${MQTT_DASHBOARD_PASSWORD}
+    ports:
+      - '1883:1883'
+      - '8083:8083'
+      - '18083:18083'
+    volumes:
+      - emqx_data:/opt/emqx/data
+      - emqx_log:/opt/emqx/log
+      - ./emqx-config/cluster.hocon:/opt/emqx/data/configs/cluster.hocon
+    networks:
+      - smokeguard-network
+    healthcheck:
+      test: ['CMD', 'emqx', 'ping']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  emqx-init:
+    image: alpine:latest
+    container_name: smokeguard-emqx-init
+    volumes:
+      - ./emqx-config/init-emqx.sh:/init-emqx.sh
+    environment:
+      MQTT_DASHBOARD_USER: ${MQTT_DASHBOARD_USER}
+      MQTT_DASHBOARD_PASSWORD: ${MQTT_DASHBOARD_PASSWORD}
+      MQTT_USERNAME: ${MQTT_USERNAME}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+    networks:
+      - smokeguard-network
+    depends_on:
+      mqtt:
+        condition: service_healthy
+    command: sh -c "chmod +x /init-emqx.sh && /init-emqx.sh"
+    restart: "no"
+
+  backend:
+    image: ghcr.io/${GITHUB_REPOSITORY}:latest
+    container_name: smokeguard-backend
+    restart: always
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
+      MQTT_USERNAME: ${MQTT_USERNAME}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+      CORS_ORIGIN: https://api.smoke-guard.pp.ua
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mqtt:
+        condition: service_healthy
+    networks:
+      - smokeguard-network
+
+volumes:
+  postgres_data:
+  emqx_data:
+  emqx_log:
+
+networks:
+  smokeguard-network:
+    driver: bridge

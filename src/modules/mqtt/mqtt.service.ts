@@ -11,6 +11,8 @@ import { AlarmStatus } from '../../database/entities/alarm.entity';
 interface SensorDataPayload {
     smokeDetected: boolean;
     smokeLevel: number;
+    temperature: number;
+    humidity: number;
 }
 
 interface SensorHeartbeatPayload {
@@ -139,6 +141,8 @@ export class MqttService implements OnModuleDestroy {
             const { smokeStateChanged } = await this.sensorsService.saveSensorReading(sensorId, {
                 smokeDetected: data.smokeDetected,
                 smokeLevel: data.smokeLevel,
+                temperature: data.temperature,
+                humidity: data.humidity,
             });
 
             if (smokeStateChanged) {

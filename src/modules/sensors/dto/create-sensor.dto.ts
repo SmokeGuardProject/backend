@@ -4,7 +4,7 @@ import { IsString, IsNotEmpty, MinLength, IsOptional, IsInt, Min } from 'class-v
 export class CreateSensorDto {
   @ApiProperty({
     description: 'Локація датчика',
-    example: 'Кімната 101',
+    example: 'Room 101',
     minLength: 3,
   })
   @IsString()
@@ -25,7 +25,7 @@ export class CreateSensorDto {
 
   @ApiProperty({
     description: 'Будівля',
-    example: 'Корпус А',
+    example: 'Building A',
     required: false,
   })
   @IsOptional()

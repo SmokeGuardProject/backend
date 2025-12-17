@@ -14,7 +14,7 @@ export class CreateAlarmDto {
 
   @ApiProperty({
     description: 'Локація сигналізації',
-    example: 'Кімната 101',
+    example: 'Room 101',
   })
   @IsString()
   @IsNotEmpty()
@@ -32,7 +32,7 @@ export class CreateAlarmDto {
 
   @ApiProperty({
     description: 'Будівля',
-    example: 'Корпус А',
+    example: 'Building A',
     required: false,
   })
   @IsOptional()

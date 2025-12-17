@@ -5,6 +5,7 @@ import { Event, EventType } from '../../database/entities/event.entity';
 import { Sensor } from '../../database/entities/sensor.entity';
 import { CreateEventDto } from './dto/create-event.dto';
 import { FilterEventsDto } from './dto/filter-events.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class EventsService {
@@ -13,11 +14,14 @@ export class EventsService {
     private readonly eventRepository: Repository<Event>,
     @InjectRepository(Sensor)
     private readonly sensorRepository: Repository<Sensor>,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(createEventDto: CreateEventDto): Promise<Event> {
+    let sensor: Sensor | null = null;
+
     if (createEventDto.sensorId) {
-      const sensor = await this.sensorRepository.findOne({
+      sensor = await this.sensorRepository.findOne({
         where: { id: createEventDto.sensorId },
       });
 
@@ -27,7 +31,14 @@ export class EventsService {
     }
 
     const event = this.eventRepository.create(createEventDto);
-    return this.eventRepository.save(event);
+    const savedEvent = await this.eventRepository.save(event);
+
+    if (sensor) {
+      savedEvent.sensor = sensor;
+      await this.notificationsService.createNotificationsForEvent(savedEvent);
+    }
+
+    return savedEvent;
   }
 
   async findAll(filterDto: FilterEventsDto): Promise<Event[]> {

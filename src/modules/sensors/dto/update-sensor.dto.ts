@@ -5,7 +5,7 @@ import { SensorStatus } from '../../../database/entities/sensor.entity';
 export class UpdateSensorDto {
   @ApiProperty({
     description: 'Локація датчика',
-    example: 'Кімната 102',
+    example: 'Room 102',
     required: false,
     minLength: 3,
   })
@@ -27,7 +27,7 @@ export class UpdateSensorDto {
 
   @ApiProperty({
     description: 'Будівля',
-    example: 'Корпус Б',
+    example: 'Building B',
     required: false,
   })
   @IsOptional()

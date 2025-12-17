@@ -22,7 +22,7 @@ export class RegisterDto {
 
   @ApiProperty({
     description: "Повне ім'я користувача",
-    example: 'Іван Петренко',
+    example: 'John Doe',
   })
   @IsString()
   @IsNotEmpty({ message: "Повне ім'я є обов'язковим" })

@@ -10,7 +10,7 @@ export class SensorResponseDto {
 
   @ApiProperty({
     description: 'Локація датчика',
-    example: 'Кімната 101',
+    example: 'Room 101',
   })
   location: string;
 
@@ -23,7 +23,7 @@ export class SensorResponseDto {
 
   @ApiProperty({
     description: 'Будівля',
-    example: 'Корпус А',
+    example: 'Building A',
     nullable: true,
   })
   building: string | null;

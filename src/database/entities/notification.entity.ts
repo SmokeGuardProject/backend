@@ -11,14 +11,20 @@ import { Event } from './event.entity';
 
 @Entity('notifications')
 export class Notification {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn()
+  id: number;
 
-  @Column({ name: 'user_id', type: 'uuid' })
-  userId: string;
+  @Column({ name: 'user_id', type: 'int' })
+  userId: number;
 
-  @Column({ name: 'event_id', type: 'uuid' })
-  eventId: string;
+  @Column({ name: 'event_id', type: 'int' })
+  eventId: number;
+
+  @Column({ type: 'text' })
+  message: string;
+
+  @Column({ type: 'boolean', default: false })
+  read: boolean;
 
   @Column({ name: 'sent_at', type: 'timestamp', nullable: true })
   sentAt: Date;
