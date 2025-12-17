@@ -2,6 +2,8 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -10,6 +12,7 @@ import { Sensor } from '../../database/entities/sensor.entity';
 import { CreateAlarmDto } from './dto/create-alarm.dto';
 import { UpdateAlarmDto } from './dto/update-alarm.dto';
 import { FilterAlarmsDto } from './dto/filter-alarms.dto';
+import { MqttService } from '../mqtt/mqtt.service';
 
 @Injectable()
 export class AlarmsService {
@@ -18,6 +21,8 @@ export class AlarmsService {
     private readonly alarmRepository: Repository<Alarm>,
     @InjectRepository(Sensor)
     private readonly sensorRepository: Repository<Sensor>,
+    @Inject(forwardRef(() => MqttService))
+    private readonly mqttService: MqttService,
   ) {}
 
   async create(createAlarmDto: CreateAlarmDto): Promise<Alarm> {
@@ -94,7 +99,11 @@ export class AlarmsService {
     alarm.status = AlarmStatus.ACTIVE;
     alarm.activatedAt = new Date();
 
-    return this.alarmRepository.save(alarm);
+    const savedAlarm = await this.alarmRepository.save(alarm);
+
+    await this.mqttService.publishAlarmCommand(id, 'activate');
+
+    return savedAlarm;
   }
 
   async deactivate(id: number): Promise<Alarm> {
@@ -107,7 +116,11 @@ export class AlarmsService {
     alarm.status = AlarmStatus.INACTIVE;
     alarm.deactivatedAt = new Date();
 
-    return this.alarmRepository.save(alarm);
+    const savedAlarm = await this.alarmRepository.save(alarm);
+
+    await this.mqttService.publishAlarmCommand(id, 'deactivate');
+
+    return savedAlarm;
   }
 
   async findActiveAlarms(): Promise<Alarm[]> {

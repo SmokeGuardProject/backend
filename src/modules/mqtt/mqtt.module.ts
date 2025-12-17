@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MqttAuthController } from './mqtt-auth.controller';
 import { MqttService } from './mqtt.service';
@@ -7,7 +7,12 @@ import { EventsModule } from '../events/events.module';
 import { AlarmsModule } from '../alarms/alarms.module';
 
 @Module({
-  imports: [ConfigModule, SensorsModule, EventsModule, AlarmsModule],
+  imports: [
+    ConfigModule,
+    SensorsModule,
+    EventsModule,
+    forwardRef(() => AlarmsModule),
+  ],
   controllers: [MqttAuthController],
   providers: [MqttService],
   exports: [MqttService],

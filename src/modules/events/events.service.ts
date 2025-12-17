@@ -5,7 +5,6 @@ import { Event, EventType } from '../../database/entities/event.entity';
 import { Sensor } from '../../database/entities/sensor.entity';
 import { CreateEventDto } from './dto/create-event.dto';
 import { FilterEventsDto } from './dto/filter-events.dto';
-import { ResolveEventDto } from './dto/resolve-event.dto';
 
 @Injectable()
 export class EventsService {
@@ -95,13 +94,16 @@ export class EventsService {
     unresolved: number;
     byType: Record<EventType, number>;
   }> {
-    const [total, resolved, unresolved, byTypeSmokeDetected, byTypeAlarmActivated, byTypeAlarmDeactivated] =
+    const [total, resolved, unresolved, byTypeSmokeDetected, byTypeSmokeCleared, byTypeAlarmActivated, byTypeAlarmDeactivated] =
       await Promise.all([
         this.eventRepository.count(),
         this.eventRepository.count({ where: { resolved: true } }),
         this.eventRepository.count({ where: { resolved: false } }),
         this.eventRepository.count({
           where: { eventType: EventType.SMOKE_DETECTED },
+        }),
+        this.eventRepository.count({
+          where: { eventType: EventType.SMOKE_CLEARED },
         }),
         this.eventRepository.count({
           where: { eventType: EventType.ALARM_ACTIVATED },
@@ -117,6 +119,7 @@ export class EventsService {
       unresolved,
       byType: {
         [EventType.SMOKE_DETECTED]: byTypeSmokeDetected,
+        [EventType.SMOKE_CLEARED]: byTypeSmokeCleared,
         [EventType.ALARM_ACTIVATED]: byTypeAlarmActivated,
         [EventType.ALARM_DEACTIVATED]: byTypeAlarmDeactivated,
       },

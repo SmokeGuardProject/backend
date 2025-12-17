@@ -48,6 +48,9 @@ export class Sensor {
   @Column({ name: 'last_checked_at', nullable: true, type: 'timestamp' })
   lastCheckedAt: Date;
 
+  @Column({ name: 'last_smoke_detected', nullable: true, type: 'boolean' })
+  lastSmokeDetected: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

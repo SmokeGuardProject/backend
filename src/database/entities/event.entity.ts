@@ -14,6 +14,7 @@ import { Notification } from './notification.entity';
 
 export enum EventType {
   SMOKE_DETECTED = 'smoke_detected',
+  SMOKE_CLEARED = 'smoke_cleared',
   ALARM_ACTIVATED = 'alarm_activated',
   ALARM_DEACTIVATED = 'alarm_deactivated',
 }

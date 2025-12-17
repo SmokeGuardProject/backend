@@ -169,9 +169,11 @@ export class SensorsService {
 
     return readings.map((reading) => ({
       id: reading.id,
-      sensorId: reading.sensor.id,
+      sensorId: reading.sensorId,
       smokeDetected: reading.smokeDetected,
       smokeLevel: reading.smokeLevel,
+      temperature: reading.temperature,
+      humidity: reading.humidity,
       timestamp: reading.timestamp,
       createdAt: reading.createdAt,
     }));
@@ -193,7 +195,7 @@ export class SensorsService {
       smokeDetected: boolean;
       smokeLevel: number;
     },
-  ): Promise<void> {
+  ): Promise<{ smokeStateChanged: boolean; previousState: boolean | null }> {
     const sensor = await this.sensorRepository.findOne({
       where: { id: sensorId },
     });
@@ -201,6 +203,12 @@ export class SensorsService {
     if (!sensor) {
       throw new NotFoundException(`Sensor ${sensorId} not found`);
     }
+
+    const previousSmokeDetected = sensor.lastSmokeDetected;
+    const smokeStateChanged = previousSmokeDetected !== data.smokeDetected;
+
+    sensor.lastSmokeDetected = data.smokeDetected;
+    await this.sensorRepository.save(sensor);
 
     const reading = this.sensorReadingRepository.create({
       sensor,
@@ -210,6 +218,11 @@ export class SensorsService {
     });
 
     await this.sensorReadingRepository.save(reading);
+
+    return {
+      smokeStateChanged,
+      previousState: previousSmokeDetected,
+    };
   }
 
   async updateHeartbeat(sensorId: number): Promise<void> {

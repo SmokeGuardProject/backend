@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as mqtt from 'mqtt';
 import { MqttClient } from 'mqtt';
@@ -30,6 +30,7 @@ export class MqttService implements OnModuleDestroy {
         private readonly configService: ConfigService,
         private readonly sensorsService: SensorsService,
         private readonly eventsService: EventsService,
+        @Inject(forwardRef(() => AlarmsService))
         private readonly alarmsService: AlarmsService,
     ) {
         this.mqttHost = this.configService.get<string>('MQTT_HOST', 'localhost');
@@ -135,22 +136,33 @@ export class MqttService implements OnModuleDestroy {
     private async handleSensorData(sensorId: number, data: SensorDataPayload): Promise<void> {
         this.logger.debug(`Received data from sensor ${sensorId}: ${JSON.stringify(data)}`);
         try {
-            await this.sensorsService.saveSensorReading(sensorId, {
+            const { smokeStateChanged } = await this.sensorsService.saveSensorReading(sensorId, {
                 smokeDetected: data.smokeDetected,
                 smokeLevel: data.smokeLevel,
             });
 
-            if (data.smokeDetected) {
-                this.logger.warn(`🔥 Smoke detected by sensor ${sensorId}! Level: ${data.smokeLevel}`);
+            if (smokeStateChanged) {
+                if (data.smokeDetected) {
+                    this.logger.warn(`🔥 Smoke detected by sensor ${sensorId}! Level: ${data.smokeLevel}`);
 
-                await this.eventsService.create({
-                    sensorId,
-                    eventType: EventType.SMOKE_DETECTED,
-                });
+                    await this.eventsService.create({
+                        sensorId,
+                        eventType: EventType.SMOKE_DETECTED,
+                    });
 
-                this.logger.log(`Created SMOKE_DETECTED event for sensor ${sensorId}`);
+                    this.logger.log(`Created SMOKE_DETECTED event for sensor ${sensorId}`);
 
-                await this.activateAlarmsForSmoke(sensorId);
+                    await this.activateAlarmsForSmoke(sensorId);
+                } else {
+                    this.logger.log(`✅ Smoke cleared on sensor ${sensorId}`);
+
+                    await this.eventsService.create({
+                        sensorId,
+                        eventType: EventType.SMOKE_CLEARED,
+                    });
+
+                    this.logger.log(`Created SMOKE_CLEARED event for sensor ${sensorId}`);
+                }
             }
         } catch (error) {
             this.logger.error(`Failed to save sensor reading: ${error.message}`);

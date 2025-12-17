@@ -31,6 +31,22 @@ export class SensorReading {
     })
     smokeLevel: number | null;
 
+    @Column({
+        type: 'decimal',
+        nullable: true,
+        precision: 5,
+        scale: 2,
+    })
+    temperature: number | null;
+
+    @Column({
+        type: 'decimal',
+        nullable: true,
+        precision: 5,
+        scale: 2,
+    })
+    humidity: number | null;
+
     @Column({ type: 'timestamp' })
     timestamp: Date;
 

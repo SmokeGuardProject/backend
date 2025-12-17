@@ -27,6 +27,20 @@ export class SensorReadingResponseDto {
   smokeLevel: number | null;
 
   @ApiProperty({
+    description: 'Температура (°C)',
+    example: 22.5,
+    nullable: true,
+  })
+  temperature: number | null;
+
+  @ApiProperty({
+    description: 'Вологість (%)',
+    example: 65.0,
+    nullable: true,
+  })
+  humidity: number | null;
+
+  @ApiProperty({
     description: 'Час вимірювання',
     example: '2025-12-12T09:25:00Z',
   })
