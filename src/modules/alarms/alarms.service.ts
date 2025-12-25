@@ -131,17 +131,4 @@ export class AlarmsService {
     return savedAlarm;
   }
 
-  async findActiveAlarms(): Promise<Alarm[]> {
-    return this.alarmRepository.find({
-      where: { status: AlarmStatus.ACTIVE },
-    });
-  }
-
-  async findBySensorId(sensorId: number, status?: AlarmStatus): Promise<Alarm[]> {
-    const where: any = { sensorId };
-    if (status) {
-      where.status = status;
-    }
-    return this.alarmRepository.find({ where });
-  }
 }

@@ -37,11 +37,6 @@ export class AlarmsController {
     return this.alarmsService.findAll(filterDto);
   }
 
-  @Get('active')
-  findActive() {
-    return this.alarmsService.findActiveAlarms();
-  }
-
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.alarmsService.findOne(id);
