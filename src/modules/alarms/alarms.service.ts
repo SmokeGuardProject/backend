@@ -15,6 +15,7 @@ import { FilterAlarmsDto } from './dto/filter-alarms.dto';
 import { MqttService } from '../mqtt/mqtt.service';
 import { EventsService } from '../events/events.service';
 import { EventType } from '../../database/entities/event.entity';
+import { WebsocketEventsService } from '../websocket/websocket-events.service';
 
 @Injectable()
 export class AlarmsService {
@@ -26,6 +27,7 @@ export class AlarmsService {
     @Inject(forwardRef(() => MqttService))
     private readonly mqttService: MqttService,
     private readonly eventsService: EventsService,
+    private readonly websocketEventsService: WebsocketEventsService,
   ) {}
 
   async create(createAlarmDto: CreateAlarmDto): Promise<Alarm> {
@@ -94,9 +96,16 @@ export class AlarmsService {
 
   async activate(id: number): Promise<Alarm> {
     const alarm = await this.findOne(id);
+    const sensor = await this.sensorRepository.findOne({
+      where: { id: alarm.sensorId },
+    });
 
     if (alarm.status === AlarmStatus.ACTIVE) {
       throw new BadRequestException('Сигналізація вже активована');
+    }
+
+    if (!sensor) {
+      throw new NotFoundException('Датчик не знайдено');
     }
 
     alarm.status = AlarmStatus.ACTIVE;
@@ -105,6 +114,17 @@ export class AlarmsService {
     const savedAlarm = await this.alarmRepository.save(alarm);
 
     await this.mqttService.publishAlarmCommand(id, 'activate');
+    await this.eventsService.create({
+      sensorId: alarm.sensorId,
+      eventType: EventType.ALARM_ACTIVATED,
+    });
+
+    this.websocketEventsService.emitAlarmActivated(savedAlarm, sensor);
+    this.websocketEventsService.broadcastCriticalEvent(sensor.userId, alarm.sensorId, {
+      type: 'alarm_activated',
+      message: `Alarm ${alarm.id} activated`,
+      alarmId: alarm.id,
+    });
 
     return savedAlarm;
   }
@@ -130,5 +150,4 @@ export class AlarmsService {
 
     return savedAlarm;
   }
-
 }

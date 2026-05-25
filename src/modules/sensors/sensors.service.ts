@@ -1,16 +1,17 @@
-import {ConflictException, Injectable, NotFoundException} from '@nestjs/common';
-import {InjectRepository} from '@nestjs/typeorm';
-import {Repository} from 'typeorm';
-import {Sensor, SensorStatus} from '../../database/entities/sensor.entity';
-import {SensorReading} from '../../database/entities/sensor-reading.entity';
-import {CreateSensorDto} from './dto/create-sensor.dto';
-import {UpdateSensorDto} from './dto/update-sensor.dto';
-import {SensorResponseDto} from './dto/sensor-response.dto';
-import {CreateSensorResponseDto} from './dto/create-sensor-response.dto';
-import {RegenerateCodeResponseDto} from './dto/regenerate-code-response.dto';
-import {SensorReadingResponseDto} from './dto/sensor-reading-response.dto';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Sensor, SensorStatus } from '../../database/entities/sensor.entity';
+import { SensorReading } from '../../database/entities/sensor-reading.entity';
+import { CreateSensorDto } from './dto/create-sensor.dto';
+import { UpdateSensorDto } from './dto/update-sensor.dto';
+import { SensorResponseDto } from './dto/sensor-response.dto';
+import { CreateSensorResponseDto } from './dto/create-sensor-response.dto';
+import { RegenerateCodeResponseDto } from './dto/regenerate-code-response.dto';
+import { SensorReadingResponseDto } from './dto/sensor-reading-response.dto';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { WebsocketEventsService } from '../websocket/websocket-events.service';
 
 @Injectable()
 export class SensorsService {
@@ -19,6 +20,7 @@ export class SensorsService {
     private readonly sensorRepository: Repository<Sensor>,
     @InjectRepository(SensorReading)
     private readonly sensorReadingRepository: Repository<SensorReading>,
+    private readonly websocketEventsService: WebsocketEventsService,
   ) {}
 
   async create(userId: number, createSensorDto: CreateSensorDto): Promise<CreateSensorResponseDto> {
@@ -46,11 +48,14 @@ export class SensorsService {
     }
   }
 
-  async findAll(userId: number, filters?: {
-    status?: SensorStatus;
-    floor?: number;
-    building?: string;
-  }): Promise<SensorResponseDto[]> {
+  async findAll(
+    userId: number,
+    filters?: {
+      status?: SensorStatus;
+      floor?: number;
+      building?: string;
+    },
+  ): Promise<SensorResponseDto[]> {
     const queryBuilder = this.sensorRepository.createQueryBuilder('sensor');
 
     queryBuilder.where('sensor.user_id = :userId', { userId });
@@ -83,7 +88,11 @@ export class SensorsService {
     return this.sanitizeSensor(sensor);
   }
 
-  async update(userId: number, id: number, updateSensorDto: UpdateSensorDto): Promise<SensorResponseDto> {
+  async update(
+    userId: number,
+    id: number,
+    updateSensorDto: UpdateSensorDto,
+  ): Promise<SensorResponseDto> {
     const sensor = await this.sensorRepository.findOne({ where: { id, userId } });
 
     if (!sensor) {
@@ -114,7 +123,7 @@ export class SensorsService {
     }
 
     const newSensorCode = this.generateSensorCode();
-      sensor.sensorCodeHash = await this.hashSensorCode(newSensorCode);
+    sensor.sensorCodeHash = await this.hashSensorCode(newSensorCode);
     await this.sensorRepository.save(sensor);
 
     return {
@@ -189,14 +198,23 @@ export class SensorsService {
     return bcrypt.compare(plainCode, sensor.sensorCodeHash);
   }
 
+  async findEntityById(id: number): Promise<Sensor> {
+    const sensor = await this.sensorRepository.findOne({ where: { id } });
+
+    if (!sensor) {
+      throw new NotFoundException('Датчик не знайдено');
+    }
+
+    return sensor;
+  }
+
   async saveSensorReading(
     sensorId: number,
     data: {
       smokeDetected: boolean;
       smokeLevel: number;
       temperature: number;
-      humidity: number,
-
+      humidity: number;
     },
   ): Promise<{ smokeStateChanged: boolean; previousState: boolean | null }> {
     const sensor = await this.sensorRepository.findOne({
@@ -222,7 +240,8 @@ export class SensorsService {
       timestamp: new Date(),
     });
 
-    await this.sensorReadingRepository.save(reading);
+    const savedReading = await this.sensorReadingRepository.save(reading);
+    this.websocketEventsService.emitSensorReading(sensor, savedReading);
 
     return {
       smokeStateChanged,
