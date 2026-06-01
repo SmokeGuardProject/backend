@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Post,
-  Body,
-  UseGuards,
-  Response,
-} from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Response } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ReportsService } from './reports.service';
 import { GenerateReportDto } from './dto/generate-report.dto';
@@ -25,7 +19,7 @@ export class ReportsController {
   ) {
     const pdfBuffer = await this.reportsService.generateReport(generateReportDto);
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const timestamp = this.formatFilenameTimestamp(new Date());
     const filename = `smokeguard-report-${timestamp}.pdf`;
 
     res.set({
@@ -35,5 +29,17 @@ export class ReportsController {
     });
 
     res.send(pdfBuffer);
+  }
+
+  private formatFilenameTimestamp(date: Date): string {
+    const pad = (value: number) => value.toString().padStart(2, '0');
+
+    return [
+      date.getFullYear(),
+      pad(date.getMonth() + 1),
+      pad(date.getDate()),
+      pad(date.getHours()),
+      pad(date.getMinutes()),
+    ].join('-');
   }
 }

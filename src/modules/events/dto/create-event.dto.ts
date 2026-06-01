@@ -15,6 +15,16 @@ export class CreateEventDto {
   sensorId?: number;
 
   @ApiProperty({
+    description: 'ID сигналізації для подій alarm_activated та alarm_deactivated',
+    example: 1,
+    required: false,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  alarmId?: number;
+
+  @ApiProperty({
     description: 'Тип події',
     enum: EventType,
     example: EventType.SMOKE_DETECTED,

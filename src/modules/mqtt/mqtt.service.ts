@@ -135,6 +135,12 @@ export class MqttService implements OnModuleDestroy {
   private async handleSensorData(sensorId: number, data: SensorDataPayload): Promise<void> {
     this.logger.debug(`Received data from sensor ${sensorId}: ${JSON.stringify(data)}`);
     try {
+      if (this.isInvalidHumidityReading(data)) {
+        this.logger.debug(`Ignoring reading from sensor ${sensorId}: humidity is below 1`);
+        await this.sensorsService.updateHeartbeat(sensorId);
+        return;
+      }
+
       const { smokeStateChanged } = await this.sensorsService.saveSensorReading(sensorId, {
         smokeDetected: data.smokeDetected,
         smokeLevel: data.smokeLevel,
@@ -161,7 +167,7 @@ export class MqttService implements OnModuleDestroy {
 
           this.logger.log(`Created SMOKE_DETECTED event for sensor ${sensorId}`);
 
-          await this.activateAlarmsForSmoke(sensorId);
+          await this.activateAlarmsForSmoke(sensorId, sensor.userId);
         } else {
           this.logger.log(`✅ Smoke cleared on sensor ${sensorId}`);
 
@@ -183,11 +189,18 @@ export class MqttService implements OnModuleDestroy {
     }
   }
 
-  private async activateAlarmsForSmoke(sensorId: number): Promise<void> {
+  private isInvalidHumidityReading(data: SensorDataPayload): boolean {
+    return data.humidity < 1;
+  }
+
+  private async activateAlarmsForSmoke(sensorId: number, userId: number): Promise<void> {
     try {
-      const availableAlarms = await this.alarmsService.findAll({
-        status: AlarmStatus.INACTIVE,
-      });
+      const availableAlarms = await this.alarmsService.findAll(
+        {
+          status: AlarmStatus.INACTIVE,
+        },
+        userId,
+      );
 
       if (availableAlarms.length === 0) {
         this.logger.warn('No inactive alarms available to activate');
@@ -196,17 +209,27 @@ export class MqttService implements OnModuleDestroy {
 
       this.logger.warn(`🔥 Activating ALL alarms due to smoke detected by sensor ${sensorId}`);
 
+      let activatedCount = 0;
+
       for (const alarm of availableAlarms) {
         try {
-          await this.alarmsService.activate(alarm.id);
+          await this.alarmsService.activate(alarm.id, false, userId);
+          activatedCount += 1;
           this.logger.log(`🚨 Activated alarm ${alarm.id} on sensor ${alarm.sensorId}`);
         } catch (error) {
           this.logger.error(`Failed to activate alarm ${alarm.id}: ${error.message}`);
         }
       }
 
+      if (activatedCount > 0) {
+        await this.eventsService.create({
+          sensorId,
+          eventType: EventType.ALARM_ACTIVATED,
+        });
+      }
+
       this.logger.log(
-        `✅ Activated ${availableAlarms.length} alarm(s) in response to sensor ${sensorId}`,
+        `✅ Activated ${activatedCount} alarm(s) in response to sensor ${sensorId}`,
       );
     } catch (error) {
       this.logger.error(`Failed to activate alarms: ${error.message}`);

@@ -16,6 +16,7 @@ import { CreateAlarmDto } from './dto/create-alarm.dto';
 import { UpdateAlarmDto } from './dto/update-alarm.dto';
 import { FilterAlarmsDto } from './dto/filter-alarms.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { GetUser } from '../auth/decorators/get-user.decorator';
 
 @ApiTags('alarms')
 @Controller('alarms')
@@ -25,43 +26,56 @@ export class AlarmsController {
   constructor(private readonly alarmsService: AlarmsService) {}
 
   @Post()
-  create(@Body() createAlarmDto: CreateAlarmDto) {
-    return this.alarmsService.create(createAlarmDto);
+  create(@GetUser('id') userId: number, @Body() createAlarmDto: CreateAlarmDto) {
+    return this.alarmsService.create(userId, createAlarmDto);
   }
 
   @Get()
   @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({ name: 'building', required: false })
+  @ApiQuery({ name: 'floor', required: false })
   @ApiQuery({ name: 'offset', required: false, schema: { default: 0 } })
   @ApiQuery({ name: 'limit', required: false, schema: { default: 100 } })
-  findAll(@Query() filterDto: FilterAlarmsDto) {
-    return this.alarmsService.findAll(filterDto);
+  findAll(@GetUser('id') userId: number, @Query() filterDto: FilterAlarmsDto) {
+    return this.alarmsService.findAll(filterDto, userId);
+  }
+
+  @Post('activate-all')
+  activateAll(@GetUser('id') userId: number) {
+    return this.alarmsService.activateAll(userId);
+  }
+
+  @Post('deactivate-all')
+  deactivateAll(@GetUser('id') userId: number) {
+    return this.alarmsService.deactivateAll(userId);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.alarmsService.findOne(id);
+  findOne(@GetUser('id') userId: number, @Param('id', ParseIntPipe) id: number) {
+    return this.alarmsService.findOne(id, userId);
   }
 
   @Patch(':id')
   update(
+    @GetUser('id') userId: number,
     @Param('id', ParseIntPipe) id: number,
     @Body() updateAlarmDto: UpdateAlarmDto,
   ) {
-    return this.alarmsService.update(id, updateAlarmDto);
+    return this.alarmsService.update(id, updateAlarmDto, userId);
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.alarmsService.remove(id);
+  remove(@GetUser('id') userId: number, @Param('id', ParseIntPipe) id: number) {
+    return this.alarmsService.remove(id, userId);
   }
 
   @Post(':id/activate')
-  activate(@Param('id', ParseIntPipe) id: number) {
-    return this.alarmsService.activate(id);
+  activate(@GetUser('id') userId: number, @Param('id', ParseIntPipe) id: number) {
+    return this.alarmsService.activate(id, true, userId);
   }
 
   @Post(':id/deactivate')
-  deactivate(@Param('id', ParseIntPipe) id: number) {
-    return this.alarmsService.deactivate(id);
+  deactivate(@GetUser('id') userId: number, @Param('id', ParseIntPipe) id: number) {
+    return this.alarmsService.deactivate(id, true, userId);
   }
 }

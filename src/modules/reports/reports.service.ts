@@ -1,14 +1,62 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { Repository } from 'typeorm';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Event, EventType } from '../../database/entities/event.entity';
-import { Sensor } from '../../database/entities/sensor.entity';
-import { Alarm } from '../../database/entities/alarm.entity';
+import { Sensor, SensorStatus } from '../../database/entities/sensor.entity';
+import { Alarm, AlarmStatus } from '../../database/entities/alarm.entity';
 import { GenerateReportDto } from './dto/generate-report.dto';
 import PDFDocument = require('pdfkit');
 
+const COLORS = {
+  green: '#16a34a',
+  greenSoft: '#dcfce7',
+  red: '#dc2626',
+  redSoft: '#fee2e2',
+  yellow: '#d97706',
+  yellowSoft: '#fef3c7',
+  text: '#172033',
+  muted: '#667085',
+  border: '#d0d5dd',
+  header: '#f2f4f7',
+  row: '#f9fafb',
+  white: '#ffffff',
+};
+
+const PAGE = {
+  margin: 36,
+  width: 595.28,
+  height: 841.89,
+  bottom: 72,
+};
+
+const EVENT_LIMIT = 50;
+
+interface ReportEvent {
+  id: number;
+  label: string;
+  color: string;
+  background: string;
+  location: string;
+  sensorLabel: string;
+  createdAt: Date;
+  eventType: EventType | string;
+}
+
+interface TableColumn<T> {
+  header: string;
+  width: number;
+  align?: 'left' | 'center' | 'right' | 'justify';
+  render: (row: T) => string;
+  color?: (row: T) => string;
+}
+
 @Injectable()
 export class ReportsService {
+  private regularFontName = 'ReportRegular';
+  private boldFontName = 'ReportBold';
+
   constructor(
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
@@ -29,7 +77,7 @@ export class ReportsService {
   }
 
   private async fetchSensors(dto: GenerateReportDto): Promise<Sensor[]> {
-    const whereConditions: any = {};
+    const whereConditions: Partial<Sensor> = {};
 
     if (dto.sensorId) {
       whereConditions.id = dto.sensorId;
@@ -38,34 +86,45 @@ export class ReportsService {
     return this.sensorRepository.find({
       where: whereConditions,
       relations: ['events', 'alarms'],
-      order: { createdAt: 'DESC' },
+      order: { id: 'ASC' },
     });
   }
 
   private async fetchEvents(dto: GenerateReportDto): Promise<Event[]> {
-    const whereConditions: any = {};
+    const queryBuilder = this.eventRepository
+      .createQueryBuilder('event')
+      .leftJoinAndSelect('event.sensor', 'sensor')
+      .leftJoinAndSelect('event.alarm', 'alarm')
+      .leftJoinAndSelect('alarm.sensor', 'alarmSensor');
 
     if (dto.startDate && dto.endDate) {
-      whereConditions.createdAt = Between(new Date(dto.startDate), new Date(dto.endDate));
+      queryBuilder.andWhere('event.created_at BETWEEN :startDate AND :endDate', {
+        startDate: new Date(dto.startDate),
+        endDate: new Date(dto.endDate),
+      });
     } else if (dto.startDate) {
-      whereConditions.createdAt = MoreThanOrEqual(new Date(dto.startDate));
+      queryBuilder.andWhere('event.created_at >= :startDate', {
+        startDate: new Date(dto.startDate),
+      });
     } else if (dto.endDate) {
-      whereConditions.createdAt = LessThanOrEqual(new Date(dto.endDate));
+      queryBuilder.andWhere('event.created_at <= :endDate', {
+        endDate: new Date(dto.endDate),
+      });
     }
 
     if (dto.sensorId) {
-      whereConditions.sensorId = dto.sensorId;
+      queryBuilder.andWhere('(event.sensor_id = :sensorId OR alarm.sensor_id = :sensorId)', {
+        sensorId: dto.sensorId,
+      });
     }
 
     if (dto.eventType) {
-      whereConditions.eventType = dto.eventType;
+      queryBuilder.andWhere('event.event_type = :eventType', {
+        eventType: dto.eventType,
+      });
     }
 
-    return this.eventRepository.find({
-      where: whereConditions,
-      relations: ['sensor'],
-      order: { createdAt: 'DESC' },
-    });
+    return queryBuilder.orderBy('event.created_at', 'DESC').getMany();
   }
 
   private async fetchAlarms(dto: GenerateReportDto): Promise<Alarm[]> {
@@ -73,469 +132,508 @@ export class ReportsService {
       .createQueryBuilder('alarm')
       .leftJoinAndSelect('alarm.sensor', 'sensor');
 
-    if (dto.startDate && dto.endDate) {
-      queryBuilder.andWhere('alarm.created_at BETWEEN :startDate AND :endDate', {
-        startDate: new Date(dto.startDate),
-        endDate: new Date(dto.endDate),
-      });
-    } else if (dto.startDate) {
-      queryBuilder.andWhere('alarm.created_at >= :startDate', {
-        startDate: new Date(dto.startDate),
-      });
-    } else if (dto.endDate) {
-      queryBuilder.andWhere('alarm.created_at <= :endDate', {
-        endDate: new Date(dto.endDate),
-      });
-    }
-
     if (dto.sensorId) {
       queryBuilder.andWhere('alarm.sensor_id = :sensorId', {
         sensorId: dto.sensorId,
       });
     }
 
-    return queryBuilder.orderBy('alarm.created_at', 'DESC').getMany();
+    return queryBuilder.orderBy('alarm.id', 'ASC').getMany();
   }
 
   private createComprehensivePDF(
     sensors: Sensor[],
-    events: Event[],
+    rawEvents: Event[],
     alarms: Alarm[],
     dto: GenerateReportDto,
   ): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({
-        margin: 50,
+        margin: PAGE.margin,
         size: 'A4',
+        bufferPages: true,
         info: {
-          Title: 'SmokeGuard System Report',
-          Author: 'SmokeGuard System',
+          Title: 'SmokeGuard - Звіт системи виявлення задимлення',
+          Author: 'SmokeGuard',
         },
       });
 
+      this.registerFonts(doc);
+
       const chunks: Buffer[] = [];
+      const events = rawEvents
+        .map((event) => this.toReportEvent(event))
+        .filter((event): event is ReportEvent => Boolean(event));
 
       doc.on('data', (chunk) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      this.addHeader(doc);
-      this.addOverviewSection(doc, sensors, events, alarms, dto);
+      this.addCoverHeader(doc, dto);
+      this.addSummary(doc, sensors, events, alarms);
+      this.addEventStatistics(doc, events);
       this.addSensorsSection(doc, sensors);
-      this.addEventsSection(doc, events);
       this.addAlarmsSection(doc, alarms);
+      this.addEventsSection(doc, events);
       this.addFooter(doc);
 
       doc.end();
     });
   }
 
-  private addHeader(doc: PDFKit.PDFDocument): void {
-    doc
-      .fontSize(28)
-      .fillColor('#1a1a1a')
-      .font('Helvetica-Bold')
-      .text('SMOKEGUARD', { align: 'center' });
+  private registerFonts(doc: PDFKit.PDFDocument): void {
+    this.regularFontName = 'ReportRegular';
+    this.boldFontName = 'ReportBold';
 
-    doc
-      .fontSize(14)
-      .fillColor('#666666')
-      .font('Helvetica')
-      .text('Fire Detection & Evacuation System', { align: 'center' });
+    const regular = this.resolveFontPath('DejaVuSans.ttf');
+    const bold = this.resolveFontPath('DejaVuSans-Bold.ttf');
 
-    doc.moveDown(0.5);
-
-    doc
-      .moveTo(50, doc.y)
-      .lineTo(545, doc.y)
-      .lineWidth(2)
-      .strokeColor('#e74c3c')
-      .stroke();
-
-    doc.moveDown(1.5);
+    doc.registerFont(this.regularFontName, regular);
+    doc.registerFont(this.boldFontName, bold);
+    doc.font(this.regularFontName);
   }
 
-  private addOverviewSection(
-    doc: PDFKit.PDFDocument,
-    sensors: Sensor[],
-    events: Event[],
-    alarms: Alarm[],
-    dto: GenerateReportDto,
-  ): void {
-    doc
-      .fontSize(20)
-      .fillColor('#2c3e50')
-      .font('Helvetica-Bold')
-      .text('System Overview', { underline: true });
+  private resolveFontPath(filename: string): string {
+    const candidates = [
+      path.resolve(process.cwd(), 'src/assets/fonts', filename),
+      path.resolve(process.cwd(), 'dist/assets/fonts', filename),
+      path.resolve(__dirname, '../../assets/fonts', filename),
+      path.resolve(__dirname, '../../../src/assets/fonts', filename),
+    ];
+    const fontPath = candidates.find((candidate) => fs.existsSync(candidate));
 
-    doc.moveDown(0.5);
-
-    doc
-      .fontSize(10)
-      .fillColor('#7f8c8d')
-      .font('Helvetica')
-      .text(`Report Generated: ${new Date().toLocaleString('en-US', {
-        dateStyle: 'full',
-        timeStyle: 'medium'
-      })}`);
-
-    if (dto.startDate || dto.endDate) {
-      const start = dto.startDate ? new Date(dto.startDate).toLocaleDateString('en-US') : 'N/A';
-      const end = dto.endDate ? new Date(dto.endDate).toLocaleDateString('en-US') : 'N/A';
-      doc.text(`Report Period: ${start} - ${end}`);
+    if (!fontPath) {
+      throw new Error(
+        `Report font "${filename}" was not found. Expected it in src/assets/fonts or dist/assets/fonts.`,
+      );
     }
 
-    doc.moveDown(1);
+    return fontPath;
+  }
 
-    const statsY = doc.y;
-    const boxWidth = 150;
-    const boxHeight = 80;
-    const spacing = 20;
+  private regularFont(): string {
+    return this.regularFontName;
+  }
 
-    this.drawStatBox(doc, 50, statsY, boxWidth, boxHeight, sensors.length.toString(), 'Total Sensors', '#3498db');
-    this.drawStatBox(doc, 50 + boxWidth + spacing, statsY, boxWidth, boxHeight, events.length.toString(), 'Total Events', '#e67e22');
-    this.drawStatBox(doc, 50 + (boxWidth + spacing) * 2, statsY, boxWidth, boxHeight, alarms.length.toString(), 'Total Alarms', '#e74c3c');
+  private boldFont(): string {
+    return this.boldFontName;
+  }
 
-    doc.y = statsY + boxHeight + 20;
+  private addCoverHeader(doc: PDFKit.PDFDocument, dto: GenerateReportDto): void {
+    const y = PAGE.margin;
 
-    const activeSensors = sensors.filter(s => s.status === 'active').length;
-    const activeAlarms = alarms.filter(a => a.status === 'active').length;
-    const criticalEvents = events.filter(e => e.eventType === EventType.SMOKE_DETECTED).length;
+    doc.roundedRect(PAGE.margin, y, PAGE.width - PAGE.margin * 2, 116, 8).fill(COLORS.green);
 
-    doc.fontSize(12).fillColor('#2c3e50').font('Helvetica-Bold').text('Key Metrics');
-    doc.moveDown(0.3);
-    doc.fontSize(10).fillColor('#34495e').font('Helvetica');
-    doc.text(`Active Sensors: ${activeSensors} / ${sensors.length}`);
-    doc.text(`Active Alarms: ${activeAlarms} / ${alarms.length}`);
-    doc.text(`Critical Events (Smoke Detected): ${criticalEvents}`);
+    doc
+      .font(this.boldFont())
+      .fontSize(26)
+      .fillColor(COLORS.white)
+      .text('SmokeGuard', PAGE.margin + 24, y + 22, { width: 250 });
 
-    doc.moveDown(1.5);
-    this.addSectionDivider(doc);
+    doc
+      .font(this.regularFont())
+      .fontSize(13)
+      .fillColor(COLORS.white)
+      .text('Звіт системи виявлення задимлення', PAGE.margin + 24, y + 58, { width: 250 });
+
+    const metaX = PAGE.margin + 256;
+    doc.fontSize(9).fillColor('#ecfdf3');
+    this.metaLine(doc, metaX, y + 22, 'Звіт сформовано', this.formatDateTime(new Date()));
+    this.metaLine(doc, metaX, y + 42, 'Період звіту', this.formatPeriod(dto));
+    this.metaLine(
+      doc,
+      metaX,
+      y + 62,
+      'Сенсор',
+      dto.sensorId ? `Сенсор #${dto.sensorId}` : 'Усі сенсори',
+    );
+    this.metaLine(
+      doc,
+      metaX,
+      y + 82,
+      'Тип подій',
+      dto.eventType ? this.eventLabel(dto.eventType).label : 'Усі типи подій',
+    );
+
+    doc.y = y + 138;
+  }
+
+  private metaLine(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    label: string,
+    value: string,
+  ): void {
+    doc.font(this.regularFont()).fontSize(8.5).text(`${label}: ${value}`, x, y, { width: 266 });
+  }
+
+  private addSummary(
+    doc: PDFKit.PDFDocument,
+    sensors: Sensor[],
+    events: ReportEvent[],
+    alarms: Alarm[],
+  ): void {
+    const criticalEvents = events.filter((event) =>
+      [
+        EventType.SMOKE_DETECTED,
+        EventType.ALARM_ACTIVATED,
+        'smoke detected',
+        'alarm activated',
+      ].includes(event.eventType as EventType),
+    ).length;
+
+    const cards = [
+      { label: 'Усього сенсорів', value: sensors.length, color: COLORS.green },
+      { label: 'Усього сигналізацій', value: alarms.length, color: COLORS.yellow },
+      { label: 'Усього подій', value: events.length, color: COLORS.text },
+      { label: 'Критичних подій', value: criticalEvents, color: COLORS.red },
+    ];
+
+    const cardWidth = 124;
+    const cardHeight = 68;
+    const gap = 11;
+    let x = PAGE.margin;
+    const y = doc.y;
+
+    cards.forEach((card) => {
+      doc.roundedRect(x, y, cardWidth, cardHeight, 8).fillAndStroke(COLORS.white, COLORS.border);
+      doc.rect(x, y, cardWidth, 5).fill(card.color);
+      doc
+        .font(this.boldFont())
+        .fontSize(24)
+        .fillColor(card.color)
+        .text(String(card.value), x, y + 16, { width: cardWidth, align: 'center' });
+      doc
+        .font(this.regularFont())
+        .fontSize(8.5)
+        .fillColor(COLORS.muted)
+        .text(card.label, x + 8, y + 47, { width: cardWidth - 16, align: 'center' });
+      x += cardWidth + gap;
+    });
+
+    doc.y = y + cardHeight + 18;
+
+    const conclusion =
+      criticalEvents === 0
+        ? 'За вибраний період критичних подій не зафіксовано.'
+        : `За вибраний період зафіксовано ${criticalEvents} критичних подій.`;
+
+    doc
+      .roundedRect(PAGE.margin, doc.y, PAGE.width - PAGE.margin * 2, 42, 8)
+      .fillAndStroke(
+        criticalEvents === 0 ? COLORS.greenSoft : COLORS.redSoft,
+        criticalEvents === 0 ? '#86efac' : '#fecaca',
+      );
+    doc
+      .font(this.boldFont())
+      .fontSize(11)
+      .fillColor(criticalEvents === 0 ? COLORS.green : COLORS.red)
+      .text('Короткий висновок', PAGE.margin + 16, doc.y + 9);
+    doc
+      .font(this.regularFont())
+      .fontSize(10)
+      .fillColor(COLORS.text)
+      .text(conclusion, PAGE.margin + 16, doc.y + 24);
+
+    doc.y += 62;
+  }
+
+  private addEventStatistics(doc: PDFKit.PDFDocument, events: ReportEvent[]): void {
+    this.addSectionTitle(doc, 'Статистика подій');
+
+    const stats = [
+      {
+        label: 'Виявлено дим',
+        value: this.countEvents(events, EventType.SMOKE_DETECTED),
+        color: COLORS.red,
+      },
+      {
+        label: 'Дим зник',
+        value: this.countEvents(events, EventType.SMOKE_CLEARED),
+        color: COLORS.green,
+      },
+      {
+        label: 'Сигналізація активована',
+        value: this.countEvents(events, EventType.ALARM_ACTIVATED),
+        color: COLORS.red,
+      },
+      {
+        label: 'Сигналізація деактивована',
+        value: this.countEvents(events, EventType.ALARM_DEACTIVATED),
+        color: COLORS.yellow,
+      },
+    ];
+
+    const rowHeight = 26;
+    const tableWidth = PAGE.width - PAGE.margin * 2;
+    const headerY = doc.y;
+    this.drawTableHeader(
+      doc,
+      PAGE.margin,
+      headerY,
+      tableWidth,
+      rowHeight,
+      ['Тип події', 'Кількість'],
+      [380, 143],
+    );
+    doc.y = headerY + rowHeight;
+
+    stats.forEach((stat, index) => {
+      const rowY = doc.y;
+      this.drawRowBackground(doc, PAGE.margin, rowY, tableWidth, rowHeight, index);
+      doc
+        .font(this.boldFont())
+        .fontSize(9)
+        .fillColor(stat.color)
+        .text(stat.label, PAGE.margin + 10, rowY + 8, { width: 360 });
+      doc
+        .font(this.boldFont())
+        .fillColor(COLORS.text)
+        .text(String(stat.value), PAGE.margin + 390, rowY + 8, { width: 120, align: 'center' });
+      doc.y = rowY + rowHeight;
+    });
+
+    doc.y += 18;
   }
 
   private addSensorsSection(doc: PDFKit.PDFDocument, sensors: Sensor[]): void {
-    doc
-      .fontSize(20)
-      .fillColor('#2c3e50')
-      .font('Helvetica-Bold')
-      .text('Sensors Status', { underline: true });
-
-    doc.moveDown(0.5);
+    this.ensureSpace(doc, 120);
+    this.addSectionTitle(doc, 'Стан сенсорів');
 
     if (sensors.length === 0) {
-      doc.fontSize(10).fillColor('#95a5a6').font('Helvetica-Oblique').text('No sensors found');
-      doc.moveDown(1.5);
-      this.addSectionDivider(doc);
+      this.addEmptyState(doc, 'Сенсорів за вибраними фільтрами не знайдено.');
       return;
     }
 
-    const statusCounts = sensors.reduce((acc, sensor) => {
-      acc[sensor.status] = (acc[sensor.status] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
+    this.drawTable(doc, sensors, [
+      { header: 'ID', width: 34, render: (sensor) => `#${sensor.id}` },
+      { header: 'Локація', width: 210, render: (sensor) => this.formatLocation(sensor) },
+      {
+        header: 'Поверх',
+        width: 54,
+        align: 'center',
+        render: (sensor) => this.formatFloor(sensor.floor),
+      },
+      {
+        header: 'Статус',
+        width: 74,
+        render: (sensor) => this.statusLabel(sensor.status),
+        color: (sensor) => (sensor.status === SensorStatus.ACTIVE ? COLORS.green : COLORS.muted),
+      },
+      {
+        header: 'Кількість подій',
+        width: 78,
+        align: 'center',
+        render: (sensor) => String(sensor.events?.length ?? 0),
+      },
+      {
+        header: 'Сигналізацій',
+        width: 73,
+        align: 'center',
+        render: (sensor) => String(sensor.alarms?.length ?? 0),
+      },
+    ]);
 
-    doc.fontSize(11).fillColor('#34495e').font('Helvetica-Bold').text('Status Distribution:');
-    doc.fontSize(10).font('Helvetica');
-    Object.entries(statusCounts).forEach(([status, count]) => {
-      const color = status === 'active' ? '#27ae60' : status === 'inactive' ? '#95a5a6' : '#e74c3c';
-      doc.fillColor(color).text(`  ${status.toUpperCase()}: ${count}`, { continued: false });
-    });
-
-    doc.moveDown(1);
-
-    this.drawSensorsTable(doc, sensors);
-
-    doc.moveDown(1.5);
-    this.addSectionDivider(doc);
-  }
-
-  private drawSensorsTable(doc: PDFKit.PDFDocument, sensors: Sensor[]): void {
-    const tableTop = doc.y;
-    const rowHeight = 25;
-    const colWidths = [50, 150, 80, 60, 60, 60];
-    const tableLeft = 50;
-
-    doc.fontSize(9).fillColor('#ecf0f1').font('Helvetica-Bold');
-    doc.rect(tableLeft, tableTop, colWidths.reduce((a, b) => a + b, 0), rowHeight).fill('#34495e');
-
-    doc.fillColor('#ffffff');
-    let xPos = tableLeft + 5;
-    ['ID', 'Location', 'Status', 'Floor', 'Events', 'Alarms'].forEach((header, i) => {
-      doc.text(header, xPos, tableTop + 8, { width: colWidths[i], align: 'left' });
-      xPos += colWidths[i];
-    });
-
-    let yPos = tableTop + rowHeight;
-    doc.fillColor('#2c3e50').font('Helvetica');
-
-    sensors.slice(0, 20).forEach((sensor, index) => {
-      if (yPos > 700) {
-        doc.addPage();
-        yPos = 50;
-      }
-
-      const bgColor = index % 2 === 0 ? '#ecf0f1' : '#ffffff';
-      doc.rect(tableLeft, yPos, colWidths.reduce((a, b) => a + b, 0), rowHeight).fill(bgColor);
-
-      doc.fillColor('#2c3e50');
-      xPos = tableLeft + 5;
-
-      doc.text(sensor.id.toString(), xPos, yPos + 8, { width: colWidths[0], align: 'left' });
-      xPos += colWidths[0];
-
-      doc.text(sensor.location, xPos, yPos + 8, { width: colWidths[1], align: 'left' });
-      xPos += colWidths[1];
-
-      const statusColor = sensor.status === 'active' ? '#27ae60' : sensor.status === 'inactive' ? '#95a5a6' : '#e74c3c';
-      doc.fillColor(statusColor).text(sensor.status, xPos, yPos + 8, { width: colWidths[2], align: 'left' });
-      doc.fillColor('#2c3e50');
-      xPos += colWidths[2];
-
-      doc.text(sensor.floor?.toString() || 'N/A', xPos, yPos + 8, { width: colWidths[3], align: 'center' });
-      xPos += colWidths[3];
-
-      doc.text(sensor.events?.length.toString() || '0', xPos, yPos + 8, { width: colWidths[4], align: 'center' });
-      xPos += colWidths[4];
-
-      doc.text(sensor.alarms?.length.toString() || '0', xPos, yPos + 8, { width: colWidths[5], align: 'center' });
-
-      yPos += rowHeight;
-    });
-
-    doc.y = yPos + 10;
-
-    if (sensors.length > 20) {
-      doc.fontSize(8).fillColor('#95a5a6').font('Helvetica-Oblique')
-        .text(`Showing first 20 sensors out of ${sensors.length} total`);
-    }
-  }
-
-  private addEventsSection(doc: PDFKit.PDFDocument, events: Event[]): void {
-    if (doc.y > 650) {
-      doc.addPage();
-    }
-
-    doc
-      .fontSize(20)
-      .fillColor('#2c3e50')
-      .font('Helvetica-Bold')
-      .text('Events Log', { underline: true });
-
-    doc.moveDown(0.5);
-
-    if (events.length === 0) {
-      doc.fontSize(10).fillColor('#95a5a6').font('Helvetica-Oblique').text('No events found');
-      doc.moveDown(1.5);
-      this.addSectionDivider(doc);
-      return;
-    }
-
-    const eventTypeCounts = events.reduce((acc, event) => {
-      acc[event.eventType] = (acc[event.eventType] || 0) + 1;
-      return acc;
-    }, {} as Record<EventType, number>);
-
-    doc.fontSize(11).fillColor('#34495e').font('Helvetica-Bold').text('Event Type Statistics:');
-    doc.fontSize(10).font('Helvetica');
-
-    Object.entries(eventTypeCounts).forEach(([type, count]) => {
-      const color = type === EventType.SMOKE_DETECTED ? '#e74c3c' :
-                    type === EventType.ALARM_ACTIVATED ? '#e67e22' :
-                    type === EventType.ALARM_DEACTIVATED ? '#27ae60' : '#3498db';
-      doc.fillColor(color).text(`  ${type.replace(/_/g, ' ')}: ${count}`);
-    });
-
-    doc.moveDown(1);
-
-    this.drawEventsTable(doc, events);
-
-    doc.moveDown(1.5);
-    this.addSectionDivider(doc);
-  }
-
-  private drawEventsTable(doc: PDFKit.PDFDocument, events: Event[]): void {
-    const tableTop = doc.y;
-    const rowHeight = 25;
-    const colWidths = [50, 120, 150, 140];
-    const tableLeft = 50;
-
-    doc.fontSize(9).fillColor('#ecf0f1').font('Helvetica-Bold');
-    doc.rect(tableLeft, tableTop, colWidths.reduce((a, b) => a + b, 0), rowHeight).fill('#34495e');
-
-    doc.fillColor('#ffffff');
-    let xPos = tableLeft + 5;
-    ['ID', 'Event Type', 'Sensor', 'Timestamp'].forEach((header, i) => {
-      doc.text(header, xPos, tableTop + 8, { width: colWidths[i], align: 'left' });
-      xPos += colWidths[i];
-    });
-
-    let yPos = tableTop + rowHeight;
-    doc.fillColor('#2c3e50').font('Helvetica');
-
-    events.slice(0, 25).forEach((event, index) => {
-      if (yPos > 700) {
-        doc.addPage();
-        yPos = 50;
-      }
-
-      const bgColor = index % 2 === 0 ? '#ecf0f1' : '#ffffff';
-      doc.rect(tableLeft, yPos, colWidths.reduce((a, b) => a + b, 0), rowHeight).fill(bgColor);
-
-      doc.fillColor('#2c3e50');
-      xPos = tableLeft + 5;
-
-      doc.text(event.id.toString(), xPos, yPos + 8, { width: colWidths[0], align: 'left' });
-      xPos += colWidths[0];
-
-      const typeColor = event.eventType === EventType.SMOKE_DETECTED ? '#e74c3c' : '#3498db';
-      doc.fillColor(typeColor).text(event.eventType.replace(/_/g, ' '), xPos, yPos + 8, { width: colWidths[1], align: 'left' });
-      doc.fillColor('#2c3e50');
-      xPos += colWidths[1];
-
-      doc.text(event.sensor?.location || 'N/A', xPos, yPos + 8, { width: colWidths[2], align: 'left' });
-      xPos += colWidths[2];
-
-      doc.text(new Date(event.createdAt).toLocaleString('en-US'), xPos, yPos + 8, { width: colWidths[3], align: 'left' });
-
-      yPos += rowHeight;
-    });
-
-    doc.y = yPos + 10;
-
-    if (events.length > 25) {
-      doc.fontSize(8).fillColor('#95a5a6').font('Helvetica-Oblique')
-        .text(`Showing first 25 events out of ${events.length} total`);
-    }
+    doc.y += 18;
   }
 
   private addAlarmsSection(doc: PDFKit.PDFDocument, alarms: Alarm[]): void {
-    if (doc.y > 650) {
-      doc.addPage();
-    }
-
-    doc
-      .fontSize(20)
-      .fillColor('#2c3e50')
-      .font('Helvetica-Bold')
-      .text('Alarms History', { underline: true });
-
-    doc.moveDown(0.5);
+    this.ensureSpace(doc, 120);
+    this.addSectionTitle(doc, 'Стан сигналізацій');
 
     if (alarms.length === 0) {
-      doc.fontSize(10).fillColor('#95a5a6').font('Helvetica-Oblique').text('No alarms found');
-      doc.moveDown(1.5);
+      this.addEmptyState(doc, 'Сигналізацій за вибраними фільтрами не знайдено.');
       return;
     }
 
-    const activeCount = alarms.filter(a => a.status === 'active').length;
-    const inactiveCount = alarms.filter(a => a.status === 'inactive').length;
+    this.drawTable(doc, alarms, [
+      { header: 'ID', width: 34, render: (alarm) => `#${alarm.id}` },
+      { header: 'Локація', width: 178, render: (alarm) => this.formatLocation(alarm) },
+      {
+        header: 'Поверх',
+        width: 54,
+        align: 'center',
+        render: (alarm) => this.formatFloor(alarm.floor),
+      },
+      {
+        header: 'Статус',
+        width: 70,
+        render: (alarm) => this.statusLabel(alarm.status),
+        color: (alarm) => (alarm.status === AlarmStatus.ACTIVE ? COLORS.red : COLORS.muted),
+      },
+      {
+        header: 'Прив’язаний сенсор',
+        width: 92,
+        render: (alarm) => (alarm.sensorId ? `Сенсор #${alarm.sensorId}` : 'Не прив’язано'),
+      },
+      {
+        header: 'Остання активація',
+        width: 95,
+        render: (alarm) => (alarm.activatedAt ? this.formatDateTime(alarm.activatedAt) : 'Не було'),
+      },
+    ]);
 
-    doc.fontSize(11).fillColor('#34495e').font('Helvetica-Bold').text('Alarm Status:');
-    doc.fontSize(10).font('Helvetica');
-    doc.fillColor('#e74c3c').text(`  ACTIVE: ${activeCount}`);
-    doc.fillColor('#95a5a6').text(`  INACTIVE: ${inactiveCount}`);
-
-    doc.moveDown(1);
-
-    this.drawAlarmsTable(doc, alarms);
+    doc.y += 18;
   }
 
-  private drawAlarmsTable(doc: PDFKit.PDFDocument, alarms: Alarm[]): void {
-    const tableTop = doc.y;
-    const rowHeight = 30;
-    const colWidths = [40, 130, 70, 60, 120];
-    const tableLeft = 50;
+  private addEventsSection(doc: PDFKit.PDFDocument, events: ReportEvent[]): void {
+    this.ensureSpace(doc, 120);
+    this.addSectionTitle(doc, 'Журнал подій');
 
-    doc.fontSize(9).fillColor('#ecf0f1').font('Helvetica-Bold');
-    doc.rect(tableLeft, tableTop, colWidths.reduce((a, b) => a + b, 0), rowHeight).fill('#34495e');
+    if (events.length === 0) {
+      this.addEmptyState(doc, 'Подій із повним контекстом за вибраними фільтрами не знайдено.');
+      return;
+    }
 
-    doc.fillColor('#ffffff');
-    let xPos = tableLeft + 5;
-    ['ID', 'Location', 'Status', 'Floor', 'Last Activated'].forEach((header, i) => {
-      doc.text(header, xPos, tableTop + 10, { width: colWidths[i], align: 'left' });
-      xPos += colWidths[i];
-    });
+    const visibleEvents = events.slice(0, EVENT_LIMIT);
 
-    let yPos = tableTop + rowHeight;
-    doc.fillColor('#2c3e50').font('Helvetica');
+    this.drawTable(doc, visibleEvents, [
+      { header: 'ID', width: 34, render: (event) => `#${event.id}` },
+      {
+        header: 'Тип події',
+        width: 126,
+        render: (event) => event.label,
+        color: (event) => event.color,
+      },
+      { header: 'Локація', width: 190, render: (event) => event.location },
+      { header: 'Сенсор', width: 74, render: (event) => event.sensorLabel },
+      { header: 'Час', width: 99, render: (event) => this.formatDateTime(event.createdAt) },
+    ]);
 
-    alarms.slice(0, 20).forEach((alarm, index) => {
-      if (yPos > 700) {
-        doc.addPage();
-        yPos = 50;
+    doc
+      .font(this.regularFont())
+      .fontSize(8)
+      .fillColor(COLORS.muted)
+      .text(`Показано ${visibleEvents.length} із ${events.length} подій.`, PAGE.margin, doc.y + 6);
+  }
+
+  private drawTable<T>(doc: PDFKit.PDFDocument, rows: T[], columns: TableColumn<T>[]): void {
+    const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
+    const rowHeight = 34;
+
+    this.ensureSpace(doc, rowHeight * 2);
+
+    let headerY = doc.y;
+    this.drawTableHeader(
+      doc,
+      PAGE.margin,
+      headerY,
+      tableWidth,
+      rowHeight,
+      columns.map((column) => column.header),
+      columns.map((column) => column.width),
+    );
+    doc.y = headerY + rowHeight;
+
+    rows.forEach((row, index) => {
+      this.ensureSpace(doc, rowHeight + 8);
+
+      if (doc.y < 80) {
+        headerY = doc.y;
+        this.drawTableHeader(
+          doc,
+          PAGE.margin,
+          headerY,
+          tableWidth,
+          rowHeight,
+          columns.map((column) => column.header),
+          columns.map((column) => column.width),
+        );
+        doc.y = headerY + rowHeight;
       }
 
-      const bgColor = index % 2 === 0 ? '#ecf0f1' : '#ffffff';
-      doc.rect(tableLeft, yPos, colWidths.reduce((a, b) => a + b, 0), rowHeight).fill(bgColor);
+      const rowY = doc.y;
+      this.drawRowBackground(doc, PAGE.margin, rowY, tableWidth, rowHeight, index);
 
-      doc.fillColor('#2c3e50');
-      xPos = tableLeft + 5;
+      let x = PAGE.margin;
+      columns.forEach((column) => {
+        doc
+          .font(column.color ? this.boldFont() : this.regularFont())
+          .fontSize(7.5)
+          .fillColor(column.color?.(row) ?? COLORS.text)
+          .text(column.render(row), x + 6, rowY + 8, {
+            width: column.width - 12,
+            height: rowHeight - 10,
+            align: column.align ?? 'left',
+            ellipsis: true,
+          });
 
-      doc.text(alarm.id.toString(), xPos, yPos + 10, { width: colWidths[0], align: 'left' });
-      xPos += colWidths[0];
+        x += column.width;
+      });
 
-      doc.text(alarm.location, xPos, yPos + 10, { width: colWidths[1], align: 'left' });
-      xPos += colWidths[1];
-
-      const statusColor = alarm.status === 'active' ? '#e74c3c' : '#95a5a6';
-      doc.fillColor(statusColor).text(alarm.status.toUpperCase(), xPos, yPos + 10, { width: colWidths[2], align: 'left' });
-      doc.fillColor('#2c3e50');
-      xPos += colWidths[2];
-
-      doc.text(alarm.floor?.toString() || 'N/A', xPos, yPos + 10, { width: colWidths[3], align: 'center' });
-      xPos += colWidths[3];
-
-      const activated = alarm.activatedAt ? new Date(alarm.activatedAt).toLocaleString('en-US') : 'Never';
-      doc.fontSize(8).text(activated, xPos, yPos + 10, { width: colWidths[4], align: 'left' });
-      doc.fontSize(9);
-
-      yPos += rowHeight;
+      doc.y = rowY + rowHeight;
     });
-
-    doc.y = yPos + 10;
-
-    if (alarms.length > 20) {
-      doc.fontSize(8).fillColor('#95a5a6').font('Helvetica-Oblique')
-        .text(`Showing first 20 alarms out of ${alarms.length} total`);
-    }
   }
 
-  private drawStatBox(
+  private drawTableHeader(
     doc: PDFKit.PDFDocument,
     x: number,
     y: number,
     width: number,
     height: number,
-    value: string,
-    label: string,
-    color: string,
+    headers: string[],
+    columnWidths: number[],
   ): void {
-    doc.rect(x, y, width, height).lineWidth(1).strokeColor('#bdc3c7').stroke();
+    doc.rect(x, y, width, height).fillAndStroke(COLORS.header, COLORS.border);
 
-    doc.rect(x, y, width, 5).fill(color);
+    let currentX = x;
+    headers.forEach((header, index) => {
+      doc
+        .font(this.boldFont())
+        .fontSize(7.5)
+        .fillColor(COLORS.text)
+        .text(header, currentX + 6, y + 11, {
+          width: columnWidths[index] - 12,
+          height: height - 12,
+        });
 
-    doc
-      .fontSize(32)
-      .fillColor(color)
-      .font('Helvetica-Bold')
-      .text(value, x, y + 20, { width, align: 'center' });
-
-    doc
-      .fontSize(11)
-      .fillColor('#7f8c8d')
-      .font('Helvetica')
-      .text(label, x, y + 58, { width, align: 'center' });
+      currentX += columnWidths[index];
+      if (index < headers.length - 1) {
+        doc
+          .moveTo(currentX, y)
+          .lineTo(currentX, y + height)
+          .strokeColor(COLORS.border)
+          .stroke();
+      }
+    });
   }
 
-  private addSectionDivider(doc: PDFKit.PDFDocument): void {
+  private drawRowBackground(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    index: number,
+  ): void {
     doc
-      .moveTo(50, doc.y)
-      .lineTo(545, doc.y)
-      .lineWidth(1)
-      .strokeColor('#bdc3c7')
-      .stroke();
+      .rect(x, y, width, height)
+      .fillAndStroke(index % 2 === 0 ? COLORS.white : COLORS.row, COLORS.border);
+  }
 
-    doc.moveDown(1.5);
+  private addSectionTitle(doc: PDFKit.PDFDocument, title: string): void {
+    doc.font(this.boldFont()).fontSize(14).fillColor(COLORS.text).text(title, PAGE.margin, doc.y);
+
+    doc
+      .moveTo(PAGE.margin, doc.y + 6)
+      .lineTo(PAGE.width - PAGE.margin, doc.y + 6)
+      .strokeColor(COLORS.green)
+      .lineWidth(1.5)
+      .stroke();
+    doc.y += 16;
+  }
+
+  private addEmptyState(doc: PDFKit.PDFDocument, message: string): void {
+    doc
+      .roundedRect(PAGE.margin, doc.y, PAGE.width - PAGE.margin * 2, 36, 8)
+      .fillAndStroke(COLORS.row, COLORS.border);
+    doc
+      .font(this.regularFont())
+      .fontSize(9)
+      .fillColor(COLORS.muted)
+      .text(message, PAGE.margin + 14, doc.y + 12);
+    doc.y += 54;
   }
 
   private addFooter(doc: PDFKit.PDFDocument): void {
@@ -545,14 +643,148 @@ export class ReportsService {
       doc.switchToPage(range.start + i);
 
       doc
+        .moveTo(PAGE.margin, PAGE.height - 52)
+        .lineTo(PAGE.width - PAGE.margin, PAGE.height - 52)
+        .strokeColor(COLORS.border)
+        .lineWidth(0.5)
+        .stroke();
+
+      doc
+        .font(this.regularFont())
         .fontSize(8)
-        .fillColor('#95a5a6')
-        .text(
-          `SmokeGuard System Report - Page ${i + 1} of ${range.count}`,
-          50,
-          doc.page.height - 50,
-          { align: 'center' }
-        );
+        .fillColor(COLORS.muted)
+        .text(`SmokeGuard — сторінка ${i + 1} з ${range.count}`, PAGE.margin, PAGE.height - 48, {
+          width: PAGE.width - PAGE.margin * 2,
+          height: 10,
+          align: 'center',
+          lineBreak: false,
+        });
     }
+  }
+
+  private ensureSpace(doc: PDFKit.PDFDocument, neededHeight: number): void {
+    if (doc.y + neededHeight > PAGE.height - PAGE.bottom) {
+      doc.addPage();
+      doc.y = PAGE.margin;
+    }
+  }
+
+  private toReportEvent(event: Event): ReportEvent | null {
+    const details = this.eventLabel(event.eventType);
+    const isAlarmEvent = [
+      EventType.ALARM_ACTIVATED,
+      EventType.ALARM_DEACTIVATED,
+      'alarm activated',
+      'alarm deactivated',
+    ].includes(event.eventType as EventType);
+    const locationSource = isAlarmEvent ? event.alarm : event.sensor;
+    const sensor = isAlarmEvent ? (event.alarm?.sensor ?? event.sensor) : event.sensor;
+
+    if (!locationSource || !sensor) {
+      return null;
+    }
+
+    const location = this.formatLocation(locationSource);
+    if (!location) {
+      return null;
+    }
+
+    return {
+      id: event.id,
+      label: details.label,
+      color: details.color,
+      background: details.background,
+      location,
+      sensorLabel: `Сенсор #${sensor.id}`,
+      createdAt: event.createdAt,
+      eventType: event.eventType,
+    };
+  }
+
+  private eventLabel(eventType: EventType | string): {
+    label: string;
+    color: string;
+    background: string;
+  } {
+    const normalized = String(eventType).trim().toLowerCase().replace(/ /g, '_');
+
+    switch (normalized) {
+      case EventType.SMOKE_DETECTED:
+        return { label: 'Виявлено дим', color: COLORS.red, background: COLORS.redSoft };
+      case EventType.SMOKE_CLEARED:
+        return { label: 'Дим зник', color: COLORS.green, background: COLORS.greenSoft };
+      case EventType.ALARM_ACTIVATED:
+        return { label: 'Сигналізація активована', color: COLORS.red, background: COLORS.redSoft };
+      case EventType.ALARM_DEACTIVATED:
+        return {
+          label: 'Сигналізація деактивована',
+          color: COLORS.yellow,
+          background: COLORS.yellowSoft,
+        };
+      default:
+        return { label: 'Невідомий тип події', color: COLORS.muted, background: COLORS.row };
+    }
+  }
+
+  private countEvents(events: ReportEvent[], type: EventType): number {
+    return events.filter((event) => String(event.eventType).replace(/ /g, '_') === type).length;
+  }
+
+  private formatLocation(entity: Pick<Sensor | Alarm, 'building' | 'floor' | 'location'>): string {
+    const parts = [
+      entity.building?.trim(),
+      entity.floor !== null && entity.floor !== undefined ? `Поверх ${entity.floor}` : null,
+      entity.location?.trim(),
+    ].filter(Boolean);
+
+    return parts.join(' / ');
+  }
+
+  private formatFloor(floor: number | null | undefined): string {
+    return floor === null || floor === undefined ? 'Не вказано' : String(floor);
+  }
+
+  private statusLabel(status: SensorStatus | AlarmStatus | string): string {
+    return status === 'active' ? 'Активний' : 'Неактивний';
+  }
+
+  private formatDateTime(value: Date | string): string {
+    return new Intl.DateTimeFormat('uk-UA', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(new Date(value));
+  }
+
+  private formatDate(value: string): string {
+    const dateOnly = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const date = dateOnly
+      ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+      : new Date(value);
+
+    return new Intl.DateTimeFormat('uk-UA', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    }).format(date);
+  }
+
+  private formatPeriod(dto: GenerateReportDto): string {
+    if (dto.startDate && dto.endDate) {
+      return `${this.formatDate(dto.startDate)} — ${this.formatDate(dto.endDate)}`;
+    }
+
+    if (dto.startDate) {
+      return `з ${this.formatDate(dto.startDate)}`;
+    }
+
+    if (dto.endDate) {
+      return `до ${this.formatDate(dto.endDate)}`;
+    }
+
+    return 'Увесь період';
   }
 }

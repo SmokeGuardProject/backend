@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { Sensor } from './sensor.entity';
 import { Notification } from './notification.entity';
+import { Alarm } from './alarm.entity';
 
 export enum EventType {
   SMOKE_DETECTED = 'smoke_detected',
@@ -21,12 +22,16 @@ export enum EventType {
 @Entity('events')
 @Index(['createdAt'])
 @Index(['sensorId'])
+@Index(['alarmId'])
 export class Event {
   @PrimaryGeneratedColumn()
   id: number;
 
   @Column({ name: 'sensor_id', type: 'int', nullable: true })
   sensorId: number;
+
+  @Column({ name: 'alarm_id', type: 'int', nullable: true })
+  alarmId: number;
 
   @Column({ name: 'event_type', type: 'varchar', length: 50 })
   eventType: EventType;
@@ -37,6 +42,10 @@ export class Event {
   @ManyToOne(() => Sensor, (sensor) => sensor.events, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'sensor_id' })
   sensor: Sensor;
+
+  @ManyToOne(() => Alarm, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'alarm_id' })
+  alarm: Alarm;
 
   @OneToMany(() => Notification, (notification) => notification.event)
   notifications: Notification[];

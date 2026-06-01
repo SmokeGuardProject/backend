@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Alarm } from '../../database/entities/alarm.entity';
+import { Notification } from '../../database/entities/notification.entity';
 import { Sensor } from '../../database/entities/sensor.entity';
 import { SensorReading } from '../../database/entities/sensor-reading.entity';
 import { WebsocketGateway } from './websocket.gateway';
@@ -9,6 +10,10 @@ export class WebsocketEventsService {
   private readonly logger = new Logger(WebsocketEventsService.name);
 
   constructor(private readonly websocketGateway: WebsocketGateway) {}
+
+  emitNotificationCreated(userId: number, notification: Notification): void {
+    this.websocketGateway.emitToUser(userId, 'notification:created', notification);
+  }
 
   emitSensorReading(sensor: Sensor, reading: SensorReading): void {
     const payload = {
@@ -46,6 +51,23 @@ export class WebsocketEventsService {
 
     this.websocketGateway.emitToUser(sensor.userId, 'alarm:activated', payload);
     this.websocketGateway.emitToSensor(alarm.sensorId, 'alarm:activated', payload);
+  }
+
+  emitAlarmDeactivated(alarm: Alarm, sensor: Sensor): void {
+    const payload = {
+      alarmId: alarm.id,
+      sensorId: alarm.sensorId,
+      userId: sensor.userId,
+      location: alarm.location,
+      floor: alarm.floor,
+      building: alarm.building,
+      status: alarm.status,
+      deactivatedAt: alarm.deactivatedAt,
+      timestamp: new Date().toISOString(),
+    };
+
+    this.websocketGateway.emitToUser(sensor.userId, 'alarm:deactivated', payload);
+    this.websocketGateway.emitToSensor(alarm.sensorId, 'alarm:deactivated', payload);
   }
 
   broadcastCriticalEvent(

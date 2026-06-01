@@ -3,9 +3,16 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Event, EventType } from '../../database/entities/event.entity';
 import { Sensor } from '../../database/entities/sensor.entity';
+import { Alarm } from '../../database/entities/alarm.entity';
 import { CreateEventDto } from './dto/create-event.dto';
 import { FilterEventsDto } from './dto/filter-events.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+
+interface CreateEventOptions {
+  notify?: boolean;
+  notificationUserId?: number;
+  notificationMessage?: string;
+}
 
 @Injectable()
 export class EventsService {
@@ -14,11 +21,18 @@ export class EventsService {
     private readonly eventRepository: Repository<Event>,
     @InjectRepository(Sensor)
     private readonly sensorRepository: Repository<Sensor>,
+    @InjectRepository(Alarm)
+    private readonly alarmRepository: Repository<Alarm>,
     private readonly notificationsService: NotificationsService,
   ) {}
 
-  async create(createEventDto: CreateEventDto): Promise<Event> {
+  async create(
+    createEventDto: CreateEventDto,
+    options: CreateEventOptions = {},
+  ): Promise<Event> {
+    const shouldNotify = options.notify ?? true;
     let sensor: Sensor | null = null;
+    let alarm: Alarm | null = null;
 
     if (createEventDto.sensorId) {
       sensor = await this.sensorRepository.findOne({
@@ -30,12 +44,42 @@ export class EventsService {
       }
     }
 
-    const event = this.eventRepository.create(createEventDto);
+    const isAlarmEvent = this.isAlarmEvent(createEventDto.eventType);
+
+    if (isAlarmEvent && createEventDto.alarmId) {
+      alarm = await this.alarmRepository.findOne({
+        where: { id: createEventDto.alarmId },
+      });
+
+      if (!alarm) {
+        throw new NotFoundException('Сигналізацію не знайдено');
+      }
+    }
+
+    const event = this.eventRepository.create({
+      ...createEventDto,
+      alarmId: isAlarmEvent ? createEventDto.alarmId ?? null : null,
+    });
     const savedEvent = await this.eventRepository.save(event);
 
     if (sensor) {
       savedEvent.sensor = sensor;
+    }
+
+    if (alarm) {
+      savedEvent.alarm = alarm;
+    }
+
+    if (shouldNotify && sensor) {
       await this.notificationsService.createNotificationsForEvent(savedEvent);
+    }
+
+    if (shouldNotify && options.notificationUserId) {
+      await this.notificationsService.createNotificationForUser(
+        options.notificationUserId,
+        savedEvent,
+        options.notificationMessage,
+      );
     }
 
     return savedEvent;
@@ -44,7 +88,8 @@ export class EventsService {
   async findAll(filterDto: FilterEventsDto): Promise<Event[]> {
     const queryBuilder = this.eventRepository
       .createQueryBuilder('event')
-      .leftJoinAndSelect('event.sensor', 'sensor');
+      .leftJoinAndSelect('event.sensor', 'sensor')
+      .leftJoinAndSelect('event.alarm', 'alarm');
 
     if (filterDto.eventType) {
       queryBuilder.andWhere('event.event_type = :eventType', {
@@ -68,7 +113,7 @@ export class EventsService {
   async findOne(id: number): Promise<Event> {
     const event = await this.eventRepository.findOne({
       where: { id },
-      relations: ['sensor'],
+      relations: ['sensor', 'alarm'],
     });
 
     if (!event) {
@@ -108,5 +153,12 @@ export class EventsService {
         [EventType.ALARM_DEACTIVATED]: byTypeAlarmDeactivated,
       },
     };
+  }
+
+  private isAlarmEvent(eventType: EventType): boolean {
+    return [
+      EventType.ALARM_ACTIVATED,
+      EventType.ALARM_DEACTIVATED,
+    ].includes(eventType);
   }
 }

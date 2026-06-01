@@ -30,9 +30,9 @@ export class AlarmsService {
     private readonly websocketEventsService: WebsocketEventsService,
   ) {}
 
-  async create(createAlarmDto: CreateAlarmDto): Promise<Alarm> {
+  async create(userId: number, createAlarmDto: CreateAlarmDto): Promise<Alarm> {
     const sensor = await this.sensorRepository.findOne({
-      where: { id: createAlarmDto.sensorId },
+      where: { id: createAlarmDto.sensorId, userId },
     });
 
     if (!sensor) {
@@ -49,12 +49,30 @@ export class AlarmsService {
     return this.alarmRepository.save(alarm);
   }
 
-  async findAll(filterDto: FilterAlarmsDto): Promise<Alarm[]> {
-    const queryBuilder = this.alarmRepository.createQueryBuilder('alarm');
+  async findAll(filterDto: FilterAlarmsDto, userId?: number): Promise<Alarm[]> {
+    const queryBuilder = this.alarmRepository
+      .createQueryBuilder('alarm')
+      .leftJoinAndSelect('alarm.sensor', 'sensor');
+
+    if (userId !== undefined) {
+      queryBuilder.where('sensor.user_id = :userId', { userId });
+    }
 
     if (filterDto.status) {
       queryBuilder.andWhere('alarm.status = :status', {
         status: filterDto.status,
+      });
+    }
+
+    if (filterDto.building) {
+      queryBuilder.andWhere('alarm.building = :building', {
+        building: filterDto.building,
+      });
+    }
+
+    if (filterDto.floor !== undefined) {
+      queryBuilder.andWhere('alarm.floor = :floor', {
+        floor: filterDto.floor,
       });
     }
 
@@ -71,8 +89,8 @@ export class AlarmsService {
     return queryBuilder.getMany();
   }
 
-  async findOne(id: number): Promise<Alarm> {
-    const alarm = await this.alarmRepository.findOne({ where: { id } });
+  async findOne(id: number, userId?: number): Promise<Alarm> {
+    const alarm = await this.findOneWithSensor(id, userId);
 
     if (!alarm) {
       throw new NotFoundException('Сигналізацію не знайдено');
@@ -81,24 +99,22 @@ export class AlarmsService {
     return alarm;
   }
 
-  async update(id: number, updateAlarmDto: UpdateAlarmDto): Promise<Alarm> {
-    const alarm = await this.findOne(id);
+  async update(id: number, updateAlarmDto: UpdateAlarmDto, userId?: number): Promise<Alarm> {
+    const alarm = await this.findOne(id, userId);
 
     Object.assign(alarm, updateAlarmDto);
 
     return this.alarmRepository.save(alarm);
   }
 
-  async remove(id: number): Promise<void> {
-    const alarm = await this.findOne(id);
+  async remove(id: number, userId?: number): Promise<void> {
+    const alarm = await this.findOne(id, userId);
     await this.alarmRepository.remove(alarm);
   }
 
-  async activate(id: number): Promise<Alarm> {
-    const alarm = await this.findOne(id);
-    const sensor = await this.sensorRepository.findOne({
-      where: { id: alarm.sensorId },
-    });
+  async activate(id: number, notify = true, userId?: number): Promise<Alarm> {
+    const alarm = await this.findOne(id, userId);
+    const sensor = alarm.sensor;
 
     if (alarm.status === AlarmStatus.ACTIVE) {
       throw new BadRequestException('Сигналізація вже активована');
@@ -114,10 +130,16 @@ export class AlarmsService {
     const savedAlarm = await this.alarmRepository.save(alarm);
 
     await this.mqttService.publishAlarmCommand(id, 'activate');
-    await this.eventsService.create({
-      sensorId: alarm.sensorId,
-      eventType: EventType.ALARM_ACTIVATED,
-    });
+    await this.eventsService.create(
+      {
+        sensorId: alarm.sensorId,
+        alarmId: alarm.id,
+        eventType: EventType.ALARM_ACTIVATED,
+      },
+      {
+        notify,
+      },
+    );
 
     this.websocketEventsService.emitAlarmActivated(savedAlarm, sensor);
     this.websocketEventsService.broadcastCriticalEvent(sensor.userId, alarm.sensorId, {
@@ -129,11 +151,59 @@ export class AlarmsService {
     return savedAlarm;
   }
 
-  async deactivate(id: number): Promise<Alarm> {
-    const alarm = await this.findOne(id);
+  async activateAll(userId: number): Promise<{
+    total: number;
+    activated: number;
+    failed: Array<{ alarmId: number; error: string }>;
+  }> {
+    const alarms = await this.findAll({ status: AlarmStatus.INACTIVE }, userId);
+    const failed: Array<{ alarmId: number; error: string }> = [];
+    const activatedSensorIds: number[] = [];
+    let activated = 0;
+
+    for (const alarm of alarms) {
+      try {
+        await this.activate(alarm.id, false, userId);
+        activated += 1;
+        activatedSensorIds.push(alarm.sensorId);
+      } catch (error) {
+        failed.push({
+          alarmId: alarm.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    if (activated > 0) {
+      await this.eventsService.create(
+        {
+          sensorId: activatedSensorIds.length === 1 ? activatedSensorIds[0] : undefined,
+          eventType: EventType.ALARM_ACTIVATED,
+        },
+        {
+          notificationUserId: userId,
+          notificationMessage: `Активовано всі сигналізації: ${activated} з ${alarms.length}.`,
+        },
+      );
+    }
+
+    return {
+      total: alarms.length,
+      activated,
+      failed,
+    };
+  }
+
+  async deactivate(id: number, notify = true, userId?: number): Promise<Alarm> {
+    const alarm = await this.findOne(id, userId);
+    const sensor = alarm.sensor;
 
     if (alarm.status !== AlarmStatus.ACTIVE) {
       throw new BadRequestException('Сигналізація не активна');
+    }
+
+    if (!sensor) {
+      throw new NotFoundException('Датчик не знайдено');
     }
 
     alarm.status = AlarmStatus.INACTIVE;
@@ -143,11 +213,75 @@ export class AlarmsService {
 
     await this.mqttService.publishAlarmCommand(id, 'deactivate');
 
-    await this.eventsService.create({
-      sensorId: alarm.sensorId,
-      eventType: EventType.ALARM_DEACTIVATED,
-    });
+    await this.eventsService.create(
+      {
+        sensorId: alarm.sensorId,
+        alarmId: alarm.id,
+        eventType: EventType.ALARM_DEACTIVATED,
+      },
+      {
+        notify,
+      },
+    );
+
+    this.websocketEventsService.emitAlarmDeactivated(savedAlarm, sensor);
 
     return savedAlarm;
+  }
+
+  async deactivateAll(userId: number): Promise<{
+    total: number;
+    deactivated: number;
+    failed: Array<{ alarmId: number; error: string }>;
+  }> {
+    const alarms = await this.findAll({ status: AlarmStatus.ACTIVE }, userId);
+    const failed: Array<{ alarmId: number; error: string }> = [];
+    const deactivatedSensorIds: number[] = [];
+    let deactivated = 0;
+
+    for (const alarm of alarms) {
+      try {
+        await this.deactivate(alarm.id, false, userId);
+        deactivated += 1;
+        deactivatedSensorIds.push(alarm.sensorId);
+      } catch (error) {
+        failed.push({
+          alarmId: alarm.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    if (deactivated > 0) {
+      await this.eventsService.create(
+        {
+          sensorId: deactivatedSensorIds.length === 1 ? deactivatedSensorIds[0] : undefined,
+          eventType: EventType.ALARM_DEACTIVATED,
+        },
+        {
+          notificationUserId: userId,
+          notificationMessage: `Деактивовано всі сигналізації: ${deactivated} з ${alarms.length}.`,
+        },
+      );
+    }
+
+    return {
+      total: alarms.length,
+      deactivated,
+      failed,
+    };
+  }
+
+  private async findOneWithSensor(id: number, userId?: number): Promise<Alarm | null> {
+    const queryBuilder = this.alarmRepository
+      .createQueryBuilder('alarm')
+      .leftJoinAndSelect('alarm.sensor', 'sensor')
+      .where('alarm.id = :id', { id });
+
+    if (userId !== undefined) {
+      queryBuilder.andWhere('sensor.user_id = :userId', { userId });
+    }
+
+    return queryBuilder.getOne();
   }
 }

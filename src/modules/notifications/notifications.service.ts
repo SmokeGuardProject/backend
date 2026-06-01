@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Notification } from '../../database/entities/notification.entity';
 import { User } from '../../database/entities/user.entity';
 import { Event, EventType } from '../../database/entities/event.entity';
+import { WebsocketEventsService } from '../websocket/websocket-events.service';
 import { MyNotificationsFilterDto } from './dto/my-notifications-filter.dto';
 import { NOTIFICATION_MESSAGES } from './constants/notification-messages.constants';
 
@@ -14,6 +15,7 @@ export class NotificationsService {
     private readonly notificationRepository: Repository<Notification>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly websocketEventsService: WebsocketEventsService,
   ) {}
 
   async createNotificationsForEvent(event: Event): Promise<void> {
@@ -23,14 +25,28 @@ export class NotificationsService {
       return;
     }
 
+    await this.createNotificationForUser(event.sensor.userId, event, message);
+  }
+
+  async createNotificationForUser(
+    userId: number,
+    event: Event,
+    message = this.generateMessageForEvent(event),
+  ): Promise<void> {
     const notification = this.notificationRepository.create({
-      userId: event.sensor.userId,
+      userId,
       eventId: event.id,
       message,
       sentAt: new Date(),
     });
 
-    await this.notificationRepository.save(notification);
+    const savedNotification = await this.notificationRepository.save(notification);
+    const notificationWithEvent = {
+      ...savedNotification,
+      event,
+    } as Notification;
+
+    this.websocketEventsService.emitNotificationCreated(userId, notificationWithEvent);
   }
 
   async findAllForUser(

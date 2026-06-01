@@ -1,6 +1,6 @@
 FROM node:20-alpine AS development
 
-RUN apk add --no-cache netcat-openbsd
+RUN apk add --no-cache netcat-openbsd ttf-dejavu
 
 WORKDIR /app
 
@@ -21,7 +21,7 @@ CMD ["npm", "run", "start:dev"]
 
 FROM node:20-alpine AS production
 
-RUN apk add --no-cache netcat-openbsd
+RUN apk add --no-cache netcat-openbsd ttf-dejavu
 
 WORKDIR /app
 
@@ -30,6 +30,7 @@ COPY package*.json ./
 RUN npm ci --only=production
 
 COPY --from=development /app/dist ./dist
+COPY --from=development /app/src/assets ./dist/assets
 
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
