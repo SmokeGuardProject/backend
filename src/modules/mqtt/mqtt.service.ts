@@ -29,6 +29,7 @@ export class MqttService implements OnModuleDestroy {
   private readonly mqttPort: number;
   private readonly mqttUsername: string;
   private readonly mqttPassword: string;
+  private readonly mqttSharedSubscriptionGroup: string;
 
   constructor(
     private readonly configService: ConfigService,
@@ -42,6 +43,10 @@ export class MqttService implements OnModuleDestroy {
     this.mqttPort = this.configService.get<number>('MQTT_PORT', 1883);
     this.mqttUsername = this.configService.get<string>('MQTT_USERNAME', '');
     this.mqttPassword = this.configService.get<string>('MQTT_PASSWORD', '');
+    this.mqttSharedSubscriptionGroup = this.configService.get<string>(
+      'MQTT_SHARED_SUBSCRIPTION_GROUP',
+      'smokeguard-backend',
+    );
   }
 
   async onModuleDestroy() {
@@ -90,14 +95,24 @@ export class MqttService implements OnModuleDestroy {
     const topics = ['sensors/+/data', 'sensors/+/heartbeat', 'sensors/+/status'];
 
     topics.forEach((topic) => {
-      this.client.subscribe(topic, { qos: 1 }, (err) => {
+      const subscriptionTopic = this.buildSubscriptionTopic(topic);
+
+      this.client.subscribe(subscriptionTopic, { qos: 1 }, (err) => {
         if (err) {
-          this.logger.error(`Failed to subscribe to ${topic}: ${err.message}`);
+          this.logger.error(`Failed to subscribe to ${subscriptionTopic}: ${err.message}`);
         } else {
-          this.logger.log(`Subscribed to ${topic}`);
+          this.logger.log(`Subscribed to ${subscriptionTopic}`);
         }
       });
     });
+  }
+
+  private buildSubscriptionTopic(topic: string): string {
+    if (!this.mqttSharedSubscriptionGroup) {
+      return topic;
+    }
+
+    return `$share/${this.mqttSharedSubscriptionGroup}/${topic}`;
   }
 
   private buildClientId(): string {
@@ -107,9 +122,10 @@ export class MqttService implements OnModuleDestroy {
 
   private handleMessage(topic: string, payload: Buffer): void {
     try {
-      const topicParts = topic.split('/');
+      const normalizedTopic = this.normalizeMessageTopic(topic);
+      const topicParts = normalizedTopic.split('/');
       if (topicParts.length !== 3) {
-        this.logger.warn(`Invalid topic format: ${topic}`);
+        this.logger.warn(`Invalid topic format: ${normalizedTopic}`);
         return;
       }
 
@@ -139,6 +155,14 @@ export class MqttService implements OnModuleDestroy {
     } catch (error) {
       this.logger.error(`Error handling message from ${topic}: ${error.message}`);
     }
+  }
+
+  private normalizeMessageTopic(topic: string): string {
+    if (!topic.startsWith('$share/')) {
+      return topic;
+    }
+
+    return topic.split('/').slice(2).join('/');
   }
 
   private async handleSensorData(sensorId: number, data: SensorDataPayload): Promise<void> {

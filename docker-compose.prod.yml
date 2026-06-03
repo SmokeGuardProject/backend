@@ -16,6 +16,7 @@ x-backend-environment: &backend-environment
   MQTT_PORT: 1883
   MQTT_USERNAME: ${MQTT_USERNAME}
   MQTT_PASSWORD: ${MQTT_PASSWORD}
+  MQTT_SHARED_SUBSCRIPTION_GROUP: ${MQTT_SHARED_SUBSCRIPTION_GROUP:-smokeguard-backend}
   JWT_SECRET: ${JWT_SECRET}
   JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
   CORS_ORIGIN: ${CORS_ORIGIN:-https://smoke-guard.pp.ua}

@@ -32,9 +32,9 @@ services:
       EMQX_DASHBOARD__DEFAULT_USERNAME: ${MQTT_DASHBOARD_USER:-admin}
       EMQX_DASHBOARD__DEFAULT_PASSWORD: ${MQTT_DASHBOARD_PASSWORD:-public}
     ports:
-      - '${MQTT_PORT:-1883}:1883'        # MQTT
-      - '${MQTT_WS_PORT:-8083}:8083'     # WebSocket
-      - '${MQTT_DASHBOARD_PORT:-18083}:18083'  # Dashboard
+      - '${MQTT_PORT:-1883}:1883' # MQTT
+      - '${MQTT_WS_PORT:-8083}:8083' # WebSocket
+      - '${MQTT_DASHBOARD_PORT:-18083}:18083' # Dashboard
     volumes:
       - emqx_data:/opt/emqx/data
       - emqx_log:/opt/emqx/log
@@ -64,7 +64,7 @@ services:
       mqtt:
         condition: service_healthy
     command: sh -c "chmod +x /init-emqx.sh && /init-emqx.sh"
-    restart: "no"
+    restart: 'no'
 
   # Backend API
   backend:
@@ -86,6 +86,7 @@ services:
       MQTT_PORT: 1883
       MQTT_USERNAME: ${MQTT_USERNAME:-backend-smokeguard}
       MQTT_PASSWORD: ${MQTT_PASSWORD:-backend-secret-change-in-production}
+      MQTT_SHARED_SUBSCRIPTION_GROUP: ${MQTT_SHARED_SUBSCRIPTION_GROUP:-smokeguard-backend}
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
