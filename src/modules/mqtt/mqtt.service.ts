@@ -262,7 +262,7 @@ export class MqttService implements OnModuleDestroy {
           },
           {
             notificationUserId: userId,
-            notificationMessage: 'Alarm activated',
+            notificationMessage: 'Сигналізація активована',
           },
         );
       }

@@ -137,13 +137,16 @@ export class AlarmsService {
 
     await this.mqttService.publishAlarmCommand(id, 'activate');
 
-    if (notify) {
-      await this.eventsService.create({
+    await this.eventsService.create(
+      {
         sensorId: alarm.sensorId,
         alarmId: alarm.id,
         eventType: EventType.ALARM_ACTIVATED,
-      });
-    }
+      },
+      {
+        notify,
+      },
+    );
 
     this.websocketEventsService.emitAlarmActivated(savedAlarm, sensor);
     this.websocketEventsService.broadcastCriticalEvent(sensor.userId, alarm.sensorId, {
@@ -183,7 +186,7 @@ export class AlarmsService {
         },
         {
           notificationUserId: userId,
-          notificationMessage: `Активовано всі сигналізації: ${activated} з ${alarms.length}.`,
+          notificationMessage: 'Сигналізація активована',
         },
       );
     }
@@ -214,13 +217,16 @@ export class AlarmsService {
 
     await this.mqttService.publishAlarmCommand(id, 'deactivate');
 
-    if (notify) {
-      await this.eventsService.create({
+    await this.eventsService.create(
+      {
         sensorId: alarm.sensorId,
         alarmId: alarm.id,
         eventType: EventType.ALARM_DEACTIVATED,
-      });
-    }
+      },
+      {
+        notify,
+      },
+    );
 
     this.websocketEventsService.emitAlarmDeactivated(savedAlarm, sensor);
 
@@ -255,7 +261,7 @@ export class AlarmsService {
         },
         {
           notificationUserId: userId,
-          notificationMessage: `Деактивовано всі сигналізації: ${deactivated} з ${alarms.length}.`,
+          notificationMessage: 'Сигналізація деактивована',
         },
       );
     }
