@@ -136,16 +136,14 @@ export class AlarmsService {
     const savedAlarm = await this.alarmRepository.save(alarm);
 
     await this.mqttService.publishAlarmCommand(id, 'activate');
-    await this.eventsService.create(
-      {
+
+    if (notify) {
+      await this.eventsService.create({
         sensorId: alarm.sensorId,
         alarmId: alarm.id,
         eventType: EventType.ALARM_ACTIVATED,
-      },
-      {
-        notify,
-      },
-    );
+      });
+    }
 
     this.websocketEventsService.emitAlarmActivated(savedAlarm, sensor);
     this.websocketEventsService.broadcastCriticalEvent(sensor.userId, alarm.sensorId, {
@@ -216,16 +214,13 @@ export class AlarmsService {
 
     await this.mqttService.publishAlarmCommand(id, 'deactivate');
 
-    await this.eventsService.create(
-      {
+    if (notify) {
+      await this.eventsService.create({
         sensorId: alarm.sensorId,
         alarmId: alarm.id,
         eventType: EventType.ALARM_DEACTIVATED,
-      },
-      {
-        notify,
-      },
-    );
+      });
+    }
 
     this.websocketEventsService.emitAlarmDeactivated(savedAlarm, sensor);
 

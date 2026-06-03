@@ -261,8 +261,8 @@ export class MqttService implements OnModuleDestroy {
             eventType: EventType.ALARM_ACTIVATED,
           },
           {
-            notify: false,
             notificationUserId: userId,
+            notificationMessage: 'Alarm activated',
           },
         );
       }
