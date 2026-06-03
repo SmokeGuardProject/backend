@@ -81,7 +81,7 @@ services:
       MQTT_PASSWORD: ${MQTT_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
-      CORS_ORIGIN: https://api.smoke-guard.pp.ua
+      CORS_ORIGIN: https://smoke-guard.pp.ua
     ports:
       - '3000:3000'
     depends_on:

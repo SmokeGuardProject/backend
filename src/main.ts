@@ -3,13 +3,14 @@ import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import {MqttService} from "./modules/mqtt/mqtt.service";
+import { getCorsOrigin } from './config/cors.config';
 
 async function bootstrap() {
     const logger = new Logger('Bootstrap');
     const app = await NestFactory.create(AppModule);
 
     app.enableCors({
-        origin: process.env.CORS_ORIGIN || '*',
+        origin: getCorsOrigin(),
         credentials: true,
     });
 

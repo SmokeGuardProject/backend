@@ -198,16 +198,17 @@ export class MqttService implements OnModuleDestroy {
       const availableAlarms = await this.alarmsService.findAll(
         {
           status: AlarmStatus.INACTIVE,
+          sensorId,
         },
         userId,
       );
 
       if (availableAlarms.length === 0) {
-        this.logger.warn('No inactive alarms available to activate');
+        this.logger.warn(`No inactive alarms linked to sensor ${sensorId} available to activate`);
         return;
       }
 
-      this.logger.warn(`🔥 Activating ALL alarms due to smoke detected by sensor ${sensorId}`);
+      this.logger.warn(`🔥 Activating alarms linked to sensor ${sensorId}`);
 
       let activatedCount = 0;
 

@@ -34,6 +34,7 @@ export class AlarmsController {
   @ApiQuery({ name: 'status', required: false })
   @ApiQuery({ name: 'building', required: false })
   @ApiQuery({ name: 'floor', required: false })
+  @ApiQuery({ name: 'sensorId', required: false })
   @ApiQuery({ name: 'offset', required: false, schema: { default: 0 } })
   @ApiQuery({ name: 'limit', required: false, schema: { default: 100 } })
   findAll(@GetUser('id') userId: number, @Query() filterDto: FilterAlarmsDto) {

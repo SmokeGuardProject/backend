@@ -15,6 +15,7 @@ import { Server, Socket } from 'socket.io';
 import { AuthService } from '../auth/auth.service';
 import { Sensor } from '../../database/entities/sensor.entity';
 import { WsAuthenticatedUser } from './interfaces/ws-authenticated-user.interface';
+import { getCorsOrigin } from '../../config/cors.config';
 
 interface AuthenticatedSocket extends Socket {
   data: Socket['data'] & {
@@ -25,7 +26,7 @@ interface AuthenticatedSocket extends Socket {
 @WebSocketGateway({
   namespace: '/realtime',
   cors: {
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: getCorsOrigin(),
     credentials: true,
   },
 })

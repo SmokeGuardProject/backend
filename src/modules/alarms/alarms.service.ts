@@ -76,6 +76,12 @@ export class AlarmsService {
       });
     }
 
+    if (filterDto.sensorId !== undefined) {
+      queryBuilder.andWhere('alarm.sensor_id = :sensorId', {
+        sensorId: filterDto.sensorId,
+      });
+    }
+
     queryBuilder.orderBy('alarm.created_at', 'DESC');
 
     if (filterDto.offset) {

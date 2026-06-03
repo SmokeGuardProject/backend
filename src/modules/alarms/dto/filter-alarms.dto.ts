@@ -33,6 +33,16 @@ export class FilterAlarmsDto {
   floor?: number;
 
   @ApiProperty({
+    description: 'Фільтр по датчику, до якого привʼязана сигналізація',
+    example: 1,
+    required: false,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  sensorId?: number;
+
+  @ApiProperty({
     description: 'Кількість записів для пропуску',
     example: 0,
     required: false,
