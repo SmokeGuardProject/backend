@@ -10,6 +10,12 @@ done
 
 echo "PostgreSQL is ready!"
 
+if [ "$RUN_MIGRATIONS" = "false" ]; then
+  echo "Skipping database migrations."
+  echo "Starting the application..."
+  exec "$@"
+fi
+
 echo "Running database migrations..."
 
 

@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as mqtt from 'mqtt';
+import { hostname } from 'os';
 import { MqttClient } from 'mqtt';
 import { SensorsService } from '../sensors/sensors.service';
 import { EventsService } from '../events/events.service';
@@ -49,11 +50,14 @@ export class MqttService implements OnModuleDestroy {
 
   public connect(): void {
     const brokerUrl = `mqtt://${this.mqttHost}:${this.mqttPort}`;
+    const clientId = this.buildClientId();
 
-    this.logger.log(`Connecting to MQTT broker at ${brokerUrl}... as ${this.mqttUsername}`);
+    this.logger.log(
+      `Connecting to MQTT broker at ${brokerUrl}... as ${this.mqttUsername}, clientId=${clientId}`,
+    );
 
     this.client = mqtt.connect(brokerUrl, {
-      clientId: 'backend-smokeguard',
+      clientId,
       username: this.mqttUsername,
       password: this.mqttPassword,
       clean: true,
@@ -94,6 +98,11 @@ export class MqttService implements OnModuleDestroy {
         }
       });
     });
+  }
+
+  private buildClientId(): string {
+    const instanceName = process.env.HOSTNAME || hostname() || `${process.pid}`;
+    return `backend-smokeguard-${instanceName}-${process.pid}`;
   }
 
   private handleMessage(topic: string, payload: Buffer): void {
@@ -229,9 +238,7 @@ export class MqttService implements OnModuleDestroy {
         });
       }
 
-      this.logger.log(
-        `✅ Activated ${activatedCount} alarm(s) in response to sensor ${sensorId}`,
-      );
+      this.logger.log(`✅ Activated ${activatedCount} alarm(s) in response to sensor ${sensorId}`);
     } catch (error) {
       this.logger.error(`Failed to activate alarms: ${error.message}`);
     }

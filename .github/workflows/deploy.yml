@@ -2,11 +2,12 @@ name: Deploy to VPS
 
 on:
   push:
-    branches: [ "master" ]
+    branches: ['master']
   workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
+  BACKEND_REPLICAS: ${{ vars.BACKEND_REPLICAS || '2' }}
 
 jobs:
   build-and-push:
@@ -66,8 +67,8 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
-          source: "emqx-config,docker-compose.prod.yml"
-          target: "/opt/smokeguard/"
+          source: 'emqx-config,docker-compose.prod.yml,nginx.conf'
+          target: '/opt/smokeguard/'
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@master
@@ -75,16 +76,16 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
-          envs: REPO_LOWER,GITHUB_ACTOR
+          envs: REPO_LOWER,GITHUB_ACTOR,BACKEND_REPLICAS
           script: |
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin
-            
+
             cd /opt/smokeguard
 
             export GITHUB_REPOSITORY=$REPO_LOWER
-            
+            export BACKEND_REPLICAS=${BACKEND_REPLICAS:-2}
+
             docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml down
-            docker compose -f docker-compose.prod.yml up -d
-            
+            docker compose -f docker-compose.prod.yml up -d --no-build --scale backend=$BACKEND_REPLICAS --remove-orphans
+
             docker image prune -f
