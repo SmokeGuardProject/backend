@@ -256,10 +256,15 @@ export class MqttService implements OnModuleDestroy {
       }
 
       if (activatedCount > 0) {
-        await this.eventsService.create({
-          sensorId,
-          eventType: EventType.ALARM_ACTIVATED,
-        });
+        await this.eventsService.create(
+          {
+            eventType: EventType.ALARM_ACTIVATED,
+          },
+          {
+            notify: false,
+            notificationUserId: userId,
+          },
+        );
       }
 
       this.logger.log(`✅ Activated ${activatedCount} alarm(s) in response to sensor ${sensorId}`);

@@ -164,14 +164,12 @@ export class AlarmsService {
   }> {
     const alarms = await this.findAll({ status: AlarmStatus.INACTIVE }, userId);
     const failed: Array<{ alarmId: number; error: string }> = [];
-    const activatedSensorIds: number[] = [];
     let activated = 0;
 
     for (const alarm of alarms) {
       try {
         await this.activate(alarm.id, false, userId);
         activated += 1;
-        activatedSensorIds.push(alarm.sensorId);
       } catch (error) {
         failed.push({
           alarmId: alarm.id,
@@ -183,7 +181,6 @@ export class AlarmsService {
     if (activated > 0) {
       await this.eventsService.create(
         {
-          sensorId: activatedSensorIds.length === 1 ? activatedSensorIds[0] : undefined,
           eventType: EventType.ALARM_ACTIVATED,
         },
         {
@@ -242,14 +239,12 @@ export class AlarmsService {
   }> {
     const alarms = await this.findAll({ status: AlarmStatus.ACTIVE }, userId);
     const failed: Array<{ alarmId: number; error: string }> = [];
-    const deactivatedSensorIds: number[] = [];
     let deactivated = 0;
 
     for (const alarm of alarms) {
       try {
         await this.deactivate(alarm.id, false, userId);
         deactivated += 1;
-        deactivatedSensorIds.push(alarm.sensorId);
       } catch (error) {
         failed.push({
           alarmId: alarm.id,
@@ -261,7 +256,6 @@ export class AlarmsService {
     if (deactivated > 0) {
       await this.eventsService.create(
         {
-          sensorId: deactivatedSensorIds.length === 1 ? deactivatedSensorIds[0] : undefined,
           eventType: EventType.ALARM_DEACTIVATED,
         },
         {
