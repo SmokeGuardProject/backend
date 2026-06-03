@@ -35,7 +35,7 @@ export class MqttAuthController {
     async authenticate(@Body() authDto: MqttAuthDto): Promise<Record<string, any>> {
 
 
-        if (authDto.clientid === 'backend-smokeguard') {
+        if (this.isBackendClient(authDto.clientid)) {
             const isValid =
                 authDto.username === this.backendUsername &&
                 authDto.password === this.backendPassword;
@@ -84,7 +84,7 @@ export class MqttAuthController {
 
 
 
-        if (clientid === 'backend-smokeguard') {
+        if (this.isBackendClient(clientid)) {
             return { result: 'allow' };
         }
 
@@ -105,6 +105,10 @@ export class MqttAuthController {
     }
 
 
+
+    private isBackendClient(clientid: string): boolean {
+        return clientid === 'backend-smokeguard' || clientid.startsWith('backend-smokeguard-');
+    }
 
     private isTopicAllowed(sensorId: number, topic: string, action: 'publish' | 'subscribe'): boolean {
 
