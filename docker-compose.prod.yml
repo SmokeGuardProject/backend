@@ -102,12 +102,13 @@ services:
     restart: 'no'
     environment:
       <<: *backend-environment
+      RUN_MIGRATIONS: 'false'
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - smokeguard-network
-    command: sh -c "echo Migrations finished"
+    command: sh -c "npx typeorm migration:run -d dist/data-source.js"
 
   backend:
     image: ghcr.io/${GITHUB_REPOSITORY}:latest

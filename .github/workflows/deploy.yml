@@ -86,6 +86,7 @@ jobs:
             export BACKEND_REPLICAS=${BACKEND_REPLICAS:-2}
 
             docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up --no-build --force-recreate --abort-on-container-exit --exit-code-from migrator migrator
             docker compose -f docker-compose.prod.yml up -d --no-build --scale backend=$BACKEND_REPLICAS --remove-orphans
 
             docker image prune -f
