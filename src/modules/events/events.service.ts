@@ -26,10 +26,7 @@ export class EventsService {
     private readonly notificationsService: NotificationsService,
   ) {}
 
-  async create(
-    createEventDto: CreateEventDto,
-    options: CreateEventOptions = {},
-  ): Promise<Event> {
+  async create(createEventDto: CreateEventDto, options: CreateEventOptions = {}): Promise<Event> {
     const shouldNotify = options.notify ?? true;
     let sensor: Sensor | null = null;
     let alarm: Alarm | null = null;
@@ -49,6 +46,7 @@ export class EventsService {
     if (isAlarmEvent && createEventDto.alarmId) {
       alarm = await this.alarmRepository.findOne({
         where: { id: createEventDto.alarmId },
+        relations: ['sensor'],
       });
 
       if (!alarm) {
@@ -56,9 +54,12 @@ export class EventsService {
       }
     }
 
+    const userId = sensor?.userId ?? alarm?.sensor?.userId ?? options.notificationUserId ?? null;
+
     const event = this.eventRepository.create({
       ...createEventDto,
-      alarmId: isAlarmEvent ? createEventDto.alarmId ?? null : null,
+      alarmId: isAlarmEvent ? (createEventDto.alarmId ?? null) : null,
+      userId,
     });
     const savedEvent = await this.eventRepository.save(event);
 
@@ -85,11 +86,15 @@ export class EventsService {
     return savedEvent;
   }
 
-  async findAll(filterDto: FilterEventsDto): Promise<Event[]> {
+  async findAll(filterDto: FilterEventsDto, userId?: number): Promise<Event[]> {
     const queryBuilder = this.eventRepository
       .createQueryBuilder('event')
       .leftJoinAndSelect('event.sensor', 'sensor')
       .leftJoinAndSelect('event.alarm', 'alarm');
+
+    if (userId !== undefined) {
+      queryBuilder.where('event.user_id = :userId', { userId });
+    }
 
     if (filterDto.eventType) {
       queryBuilder.andWhere('event.event_type = :eventType', {
@@ -110,11 +115,18 @@ export class EventsService {
     return queryBuilder.getMany();
   }
 
-  async findOne(id: number): Promise<Event> {
-    const event = await this.eventRepository.findOne({
-      where: { id },
-      relations: ['sensor', 'alarm'],
-    });
+  async findOne(id: number, userId?: number): Promise<Event> {
+    const queryBuilder = this.eventRepository
+      .createQueryBuilder('event')
+      .leftJoinAndSelect('event.sensor', 'sensor')
+      .leftJoinAndSelect('event.alarm', 'alarm')
+      .where('event.id = :id', { id });
+
+    if (userId !== undefined) {
+      queryBuilder.andWhere('event.user_id = :userId', { userId });
+    }
+
+    const event = await queryBuilder.getOne();
 
     if (!event) {
       throw new NotFoundException('Подію не знайдено');
@@ -123,26 +135,30 @@ export class EventsService {
     return event;
   }
 
-  async getStatistics(): Promise<{
+  async getStatistics(userId?: number): Promise<{
     total: number;
     byType: Record<EventType, number>;
   }> {
-    const [total, byTypeSmokeDetected, byTypeSmokeCleared, byTypeAlarmActivated, byTypeAlarmDeactivated] =
-      await Promise.all([
-        this.eventRepository.count(),
-        this.eventRepository.count({
-          where: { eventType: EventType.SMOKE_DETECTED },
-        }),
-        this.eventRepository.count({
-          where: { eventType: EventType.SMOKE_CLEARED },
-        }),
-        this.eventRepository.count({
-          where: { eventType: EventType.ALARM_ACTIVATED },
-        }),
-        this.eventRepository.count({
-          where: { eventType: EventType.ALARM_DEACTIVATED },
-        }),
-      ]);
+    const countByType = (eventType: EventType) =>
+      this.eventRepository.count({
+        where: userId !== undefined ? { userId, eventType } : { eventType },
+      });
+
+    const [
+      total,
+      byTypeSmokeDetected,
+      byTypeSmokeCleared,
+      byTypeAlarmActivated,
+      byTypeAlarmDeactivated,
+    ] = await Promise.all([
+      this.eventRepository.count({
+        where: userId !== undefined ? { userId } : {},
+      }),
+      countByType(EventType.SMOKE_DETECTED),
+      countByType(EventType.SMOKE_CLEARED),
+      countByType(EventType.ALARM_ACTIVATED),
+      countByType(EventType.ALARM_DEACTIVATED),
+    ]);
 
     return {
       total,
@@ -156,9 +172,6 @@ export class EventsService {
   }
 
   private isAlarmEvent(eventType: EventType): boolean {
-    return [
-      EventType.ALARM_ACTIVATED,
-      EventType.ALARM_DEACTIVATED,
-    ].includes(eventType);
+    return [EventType.ALARM_ACTIVATED, EventType.ALARM_DEACTIVATED].includes(eventType);
   }
 }

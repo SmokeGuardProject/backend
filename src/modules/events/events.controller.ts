@@ -1,15 +1,9 @@
-import {
-    Controller,
-    Get,
-    Param,
-    Query,
-    ParseIntPipe,
-    UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Param, Query, ParseIntPipe, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { EventsService } from './events.service';
 import { FilterEventsDto } from './dto/filter-events.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { GetUser } from '../auth/decorators/get-user.decorator';
 
 @ApiTags('events')
 @Controller('events')
@@ -22,17 +16,17 @@ export class EventsController {
   @ApiQuery({ name: 'eventType', required: false })
   @ApiQuery({ name: 'offset', required: false, schema: { default: 0 } })
   @ApiQuery({ name: 'limit', required: false, schema: { default: 100 } })
-  findAll(@Query() filterDto: FilterEventsDto) {
-    return this.eventsService.findAll(filterDto);
+  findAll(@GetUser('id') userId: number, @Query() filterDto: FilterEventsDto) {
+    return this.eventsService.findAll(filterDto, userId);
   }
 
   @Get('statistics')
-  getStatistics() {
-    return this.eventsService.getStatistics();
+  getStatistics(@GetUser('id') userId: number) {
+    return this.eventsService.getStatistics(userId);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.eventsService.findOne(id);
+  findOne(@GetUser('id') userId: number, @Param('id', ParseIntPipe) id: number) {
+    return this.eventsService.findOne(id, userId);
   }
 }
